@@ -18,6 +18,11 @@ async def root(url: str):
     return RedirectResponse(url)
 
 
+@app.get("/video")
+async def video(url: str):
+    return await root(url)
+
+
 def convert(url: str) -> str:
     """一部URLを専用URLに変換する
 
