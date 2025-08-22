@@ -26,8 +26,10 @@ class UrlType(Enum):
             return cls.YouTubeSearch
 
         # 画像?
+        if url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
+            return cls.Image
         async with httpx.AsyncClient() as client:
-            response = await client.head(url, timeout=2.0)
+            response = await client.head(url, headers={"Accept": "*/*"}, timeout=2.0)
             content_type = response.headers.get("content-type", "")
             if content_type.startswith("image/"):
                 return cls.Image

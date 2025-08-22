@@ -164,7 +164,9 @@ class ImageStream:
             logger.info(f"Cache miss, downloading from URL: {url}")
             with tempfile.TemporaryDirectory(delete=False) as temp_dir:
                 path = str(Path(temp_dir) / "image.jpg")
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(
+                headers={"user-agent": "curl/7.54.1"}
+            ) as client:
                 response = await client.get(url, timeout=2.0)
                 response.raise_for_status()
                 with open(path, "wb") as f:
