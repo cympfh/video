@@ -1,3 +1,4 @@
+import logging
 from enum import Enum
 
 import httpx
@@ -7,8 +8,8 @@ from fastapi.staticfiles import StaticFiles
 
 import util
 
+logger = logging.getLogger("uvicorn")
 istream = util.ImageStream()
-
 app = FastAPI(title="video")
 
 
@@ -45,14 +46,16 @@ async def root(url: str):
         このAPIはただリダイレクトだけする
     """
     url_type = await UrlType.from_url(url)
-    print(f"URL: {url}, Type: {url_type}")
+    logger.info(f"Accepted URL: {url}, URL Type: {url_type}")
 
     match url_type:
         case UrlType.Video:
-            url = convert(url)
-            return RedirectResponse(url)
+            converted_url = convert(url)
+            logger.info(f"Video URL converted: {url} -> {converted_url}")
+            return RedirectResponse(converted_url)
 
         case UrlType.Image:
+            logger.info(f"Processing image URL: {url}")
             return await istream.get(url=url)
 
         case UrlType.YouTubeSearch:
@@ -66,7 +69,7 @@ async def root(url: str):
                     index = int(parts[1])
                     youtube = util.YouTube()
                     video_info = await youtube.get_from_search(keyword, index)
-                    print(f"Redirecting to YouTube video: {video_info['url']}")
+                    logger.info(f"Redirecting to YouTube video: {video_info['url']}")
                     return RedirectResponse(video_info["url"])
                 except (ValueError, IndexError):
                     # インデックスが無効な場合は検索結果画像を表示
@@ -74,6 +77,7 @@ async def root(url: str):
 
             # y!{keyword} の場合は検索結果画像を表示
             keyword = url_part.split("!")[0]  # !があっても最初の部分をキーワードとする
+            logger.info(f"YouTube search for keyword: {keyword}")
             image_path = await util.YouTube().search_result(keyword)
             return await istream.get(path=image_path)
 
