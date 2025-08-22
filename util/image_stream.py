@@ -35,6 +35,7 @@ class ImageStream:
         outdir = self.BASE_DIR / stream_key
         os.makedirs(str(outdir), exist_ok=True)
 
+        fps = 16
         cmd = [
             "ffmpeg",
             "-y",
@@ -42,7 +43,7 @@ class ImageStream:
             "-loop",
             "1",
             "-framerate",
-            "30",
+            str(fps),
             "-i",
             image_path,
             "-vf",
@@ -50,14 +51,22 @@ class ImageStream:
             "-c:v",
             "libx264",
             "-preset",
-            "veryfast",
+            "ultrafast",
             "-tune",
             "stillimage",
-            "-r",
+            "-crf",
             "30",
+            "-r",
+            str(fps),
             "-g",
-            "60",
+            str(fps * 4),  # GOP size
+            "-sc_threshold",
+            "0",
+            "-force_key_frames",
+            "expr:gte(t,n_forced*4)",
             "-an",
+            "-t",
+            str(self.MAX_SECONDS),
             "-f",
             "hls",
             "-hls_time",
