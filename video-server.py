@@ -7,6 +7,8 @@ from fastapi.staticfiles import StaticFiles
 
 import util
 
+istream = util.ImageStream()
+
 app = FastAPI(title="video")
 
 
@@ -51,7 +53,7 @@ async def root(url: str):
             return RedirectResponse(url)
 
         case UrlType.Image:
-            return await util.ImageStream().get(url=url)
+            return await istream.get(url=url)
 
         case UrlType.YouTubeSearch:
             url_part = url[2:]  # y! の後の部分を取得
@@ -73,7 +75,7 @@ async def root(url: str):
             # y!{keyword} の場合は検索結果画像を表示
             keyword = url_part.split("!")[0]  # !があっても最初の部分をキーワードとする
             image_path = await util.YouTube().search_result(keyword)
-            return await util.ImageStream().get(path=image_path)
+            return await istream.get(path=image_path)
 
 
 @app.get("/video")
