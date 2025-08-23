@@ -14,8 +14,8 @@ logger = logging.getLogger("uvicorn")
 
 
 class ImageStream:
-    MAX_SECONDS = 12 * 60 * 60  # hours
-    MAX_NUM_PROCESSES = 8
+    MAX_SECONDS = 1 * 60 * 60  # hours
+    MAX_NUM_PROCESSES = 4
     BASE_DIR = Path("stream")
 
     processes = {}  # stream_key -> {'process': Popen, 'last_access': float}
