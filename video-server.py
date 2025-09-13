@@ -2,7 +2,7 @@ import logging
 from enum import Enum
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -29,15 +29,24 @@ class UrlType(Enum):
         if url.startswith("y!"):
             return cls.YouTubeSearch
 
+        # Invalid URL
+        if not url.startswith(("http://", "https://")):
+            raise HTTPException(status_code=400, detail="Invalid URL")
+
         # 画像?
         if url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
             return cls.Image
         async with httpx.AsyncClient() as client:
-            response = await client.head(url, headers={"Accept": "*/*"}, timeout=2.0)
-            content_type = response.headers.get("content-type", "")
-            if content_type.startswith("image/"):
-                return cls.Image
+            try:
+                response = await client.head(url, headers={"Accept": "*/*"}, timeout=2.0)
+                content_type = response.headers.get("content-type", "")
+                if content_type.startswith("image/"):
+                    return cls.Image
+            except httpx.RequestError:
+                logger.warning(f"Failed to fetch URL header: {url}")
+                raise HTTPException(status_code=400, detail="Failed to fetch URL header")
 
+        # その他は動画と見做す
         return cls.Video
 
 
