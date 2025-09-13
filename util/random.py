@@ -1,3 +1,4 @@
+import random
 from datetime import datetime, timezone
 
 import httpx
@@ -21,5 +22,7 @@ class Random:
                 raise ValueError("No video URLs found in the list.")
 
             now = datetime.now(timezone.utc)
-            idx = (now.day * 24 + now.hour) % len(video_urls)
+            seed = now.strftime("%Y/%m/%d")
+            random.Random(seed).shuffle(video_urls)
+            idx = now.hour % len(video_urls)
             return video_urls[idx]
