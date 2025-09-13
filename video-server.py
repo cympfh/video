@@ -17,10 +17,14 @@ class UrlType(Enum):
     Image = "image"
     Video = "video"
     YouTubeSearch = "youtube_search"
+    Random = "random"
 
     @classmethod
     async def from_url(cls, url: str) -> "UrlType":
         """URL種別を判定する"""
+        if url == "random":
+            return cls.Random
+
         # YouTube検索? (y!{keyword})
         if url.startswith("y!"):
             return cls.YouTubeSearch
@@ -54,6 +58,13 @@ async def root(url: str):
         case UrlType.Video:
             converted_url = convert(url)
             logger.info(f"Video URL converted: {url} -> {converted_url}")
+            return RedirectResponse(converted_url)
+
+        case UrlType.Random:
+            logger.info("Processing random image request")
+            video_url = await util.Random().get()
+            converted_url = convert(video_url)
+            logger.info(f"Random video URL chosen: {converted_url}")
             return RedirectResponse(converted_url)
 
         case UrlType.Image:
