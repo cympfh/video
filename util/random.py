@@ -17,7 +17,15 @@ class Random:
         async with httpx.AsyncClient() as client:
             response = await client.get(self.url, timeout=1.0)
             response.raise_for_status()
-            video_urls = response.text.splitlines()
+            lines = response.text.splitlines()
+
+            video_urls = []
+            for line in lines:
+                line = line.strip()
+                if "#" in line:
+                    line = line.split("#")[0].strip()
+                if line:
+                    video_urls.append(line)
             if not video_urls:
                 raise ValueError("No video URLs found in the list.")
 
