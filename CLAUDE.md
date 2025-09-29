@@ -25,6 +25,7 @@ The service automatically determines URL type through `UrlType.from_url()`:
 - **Random**: Returns random video from curated list
 - **NicoNico**: Converts `nicovideo.jp/watch/` URLs to `nicovideo.life/watch?v=` format
 - **Bilibili**: Wraps URLs with `biliplayer.91vrchat.com/player/?url=`
+- **X (Twitter)**: Proxies `x.com/` URLs through `nicovrc.net/proxy/?`
 
 ## Development Commands
 
