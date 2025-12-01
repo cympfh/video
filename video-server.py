@@ -133,6 +133,10 @@ def convert(url: str) -> str:
     >>> convert("https://www.bilibili.com/video/BV1smLczPEa5/?spm_id_from=333.1007.tianma.1-1-1.click")
     'https://biliplayer.91vrchat.com/player/?url=https://www.bilibili.com/video/BV1smLczPEa5/?spm_id_from=333.1007.tianma.1-1-1.click'
 
+    iwara
+    >>> convert("https://www.iwara.tv/video/rdcIORhbbfaf15")
+    'https://nicovrc.net/proxy/?https://www.iwara.tv/video/rdcIORhbbfaf15'
+
     それ以外はそのまま返す
     >>> convert("https://www.youtube.com/watch?v=abcd")
     'https://www.youtube.com/watch?v=abcd'
@@ -146,6 +150,10 @@ def convert(url: str) -> str:
     # ビリビリ動画
     if "bilibili.com/video/" in url:
         return f"https://biliplayer.91vrchat.com/player/?url={url}"
+
+    # iwara
+    if "iwara.tv/video/" in url:
+        return f"https://nicovrc.net/proxy/?{url}"
 
     # X (Twitter)
     if "x.com/" in url:
