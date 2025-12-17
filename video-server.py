@@ -22,7 +22,7 @@ class UrlType(Enum):
     @classmethod
     async def from_url(cls, url: str) -> "UrlType":
         """URL種別を判定する"""
-        if url == "random":
+        if "random".startswith(url):
             return cls.Random
 
         # YouTube検索? (y!{keyword})
