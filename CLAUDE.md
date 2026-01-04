@@ -61,3 +61,13 @@ The `convert()` function includes comprehensive docstring examples that serve as
 - httpx for HTTP client operations
 - System dependencies: ffmpeg, imagemagick (Docker only)
 - Python 3.12+ (managed via uv)
+
+## Hint
+
+```
+# Local testing
+http://localhost:8080/video?url=https://pbs.twimg.com/media/G9i_rhSaMAEUQF8?format=jpg&name=4096x4096&url=https://pbs.twimg.com/media/G9i-mGVbYAAFBf9?format=jpg&name=4096x4096&url=https://pbs.twimg.com/media/G0Vobv-b0AE5mRo?format=jpg&name=4096x4096&url=https://pbs.twimg.com/media/GwS7ArIa4AA6DpS?format=jpg&name=large&url=https://pbs.twimg.com/media/GwS4r-4aMAAUjmy?format=jpg&name=4096x4096&url=https://pbs.twimg.com/media/GrNK_AGXwAAyOy6?format=png&name=large
+
+# A demonstraion is working on
+http://s.cympfh.cc/video?url=https://pbs.twimg.com/media/G9i_rhSaMAEUQF8?format=jpg&name=4096x4096&url=https://pbs.twimg.com/media/G9i-mGVbYAAFBf9?format=jpg&name=4096x4096&url=https://pbs.twimg.com/media/G0Vobv-b0AE5mRo?format=jpg&name=4096x4096&url=https://pbs.twimg.com/media/GwS7ArIa4AA6DpS?format=jpg&name=large&url=https://pbs.twimg.com/media/GwS4r-4aMAAUjmy?format=jpg&name=4096x4096&url=https://pbs.twimg.com/media/GrNK_AGXwAAyOy6?format=png&name=large
+```

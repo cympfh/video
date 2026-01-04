@@ -2,7 +2,7 @@ import logging
 from enum import Enum
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -55,15 +55,32 @@ class UrlType(Enum):
 
 
 @app.get("/")
-async def root(url: str):
+async def root(
+    url: list[str] = Query(...),
+    interval: int = Query(8, ge=1, le=30),
+    loop: int = Query(100, ge=1),
+):
     """Redirect API
 
     Parameters
     ----------
     url
-        リダイレクト先のURL
-        このAPIはただリダイレクトだけする
+        画像/動画のURL（複数指定可能）
+        2つ以上の場合はスライドショーモード
+    interval
+        スライドショーの画像切り替え間隔（秒）
+    loop
+        スライドショーのループ回数（デフォルト: 100）
     """
+    # スライドショーモード判定
+    if len(url) >= 2:
+        logger.info(
+            f"Slideshow mode: {len(url)} images, duration={interval}s, loop={loop}"
+        )
+        return await istream.get_slideshow(urls=url, duration=interval, loop_count=loop)
+
+    # 単一URL（既存の動作）
+    url: str = url[0]
     url_type = await UrlType.from_url(url)
     logger.info(f"Accepted {url_type}({url})")
 
@@ -108,8 +125,12 @@ async def root(url: str):
 
 
 @app.get("/video")
-async def video(url: str):
-    return await root(url)
+async def video(
+    url: list[str] = Query(...),
+    interval: int = Query(8, ge=1, le=30),
+    loop: int = Query(100, ge=1),
+):
+    return await root(url, interval, loop)
 
 
 def convert(url: str) -> str:

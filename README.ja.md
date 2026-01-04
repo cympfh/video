@@ -37,10 +37,22 @@ VRChat再生のために動画コンテンツをプロキシします。
 
 ### 🖼️ 画像
 
+**単一画像:**
 ```
 http://s.cympfh.cc/video?url={IMAGE_URL}
 ```
 画像をライブストリームに変換します。PNG、JPG、JPEG、GIF、WebP形式および画像コンテンツを返すURLをサポートします。
+
+**画像スライドショー:**
+```
+http://s.cympfh.cc/video?url={IMAGE_URL_1}&url={IMAGE_URL_2}&url={IMAGE_URL_3}&interval={秒数}
+```
+複数の画像からスライドショーを作成します（2-10枚）。各画像は指定された秒数（デフォルト: 5秒）表示されます。スライドショーはデフォルトで10回ループします。
+
+例:
+```
+http://s.cympfh.cc/video?url=https://example.com/cat1.jpg&url=https://example.com/cat2.jpg&interval=10
+```
 
 ### 🔍 YouTube検索
 

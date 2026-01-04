@@ -37,10 +37,22 @@ Proxies video content for VRChat playback.
 
 ### 🖼️ Images
 
+**Single Image:**
 ```
 http://s.cympfh.cc/video?url={IMAGE_URL}
 ```
 Converts images to live streams. Supports PNG, JPG, JPEG, GIF, WebP formats and URLs returning image content.
+
+**Image Slideshow:**
+```
+http://s.cympfh.cc/video?url={IMAGE_URL_1}&url={IMAGE_URL_2}&url={IMAGE_URL_3}&interval={SECONDS}
+```
+Creates a slideshow from multiple images (2-10 images). Each image displays for the specified interval (default: 5 seconds). The slideshow loops 10 times by default.
+
+Example:
+```
+http://s.cympfh.cc/video?url=https://example.com/cat1.jpg&url=https://example.com/cat2.jpg&interval=10
+```
 
 ### 🔍 YouTube Search
 
