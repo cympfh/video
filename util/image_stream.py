@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -56,6 +57,16 @@ class ImageStream:
                     logger.warning(
                         f"Process already terminated for stream: {stream_key}"
                     )
+
+            # ストリームディレクトリを削除
+            stream_dir = self.BASE_DIR / stream_key
+            if stream_dir.exists():
+                try:
+                    shutil.rmtree(stream_dir)
+                    logger.info(f"Removed stream directory: {stream_key}")
+                except OSError as e:
+                    logger.error(f"Failed to remove directory {stream_key}: {e}")
+
             del self.processes[stream_key]
 
     def stream(self, image_path: str, stream_key: str):
@@ -164,6 +175,14 @@ class ImageStream:
             # 最後の画像をもう一度書く（concat demuxer の仕様）
             f.write(f"file '{expanded_images[-1]}'\n")
 
+        # hls_list_size を動的に計算（1時間分のセグメント数）
+        # 3600秒 / hls_time(4秒) / duration / 画像枚数
+        hls_list_size = max(int(3600 / 4 / duration / len(image_paths)), 1)
+        logger.info(
+            f"Calculated hls_list_size: {hls_list_size} "
+            f"(duration={duration}s, images={len(image_paths)})"
+        )
+
         # FFmpegコマンド構築
         cmd = [
             "ffmpeg",
@@ -199,7 +218,7 @@ class ImageStream:
             "-hls_time",
             "4",
             "-hls_list_size",
-            "6",
+            str(hls_list_size),
             "-hls_flags",
             "delete_segments+append_list+omit_endlist",
             "-hls_segment_filename",
