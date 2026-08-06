@@ -59,6 +59,7 @@ async def root(
     url: list[str] = Query(...),
     interval: int = Query(8, ge=1, le=30),
     loop: int = Query(100, ge=1),
+    p: int | None = Query(None, ge=1),
 ):
     """Redirect API
 
@@ -71,6 +72,8 @@ async def root(
         スライドショーの画像切り替え間隔（秒）
     loop
         スライドショーのループ回数（デフォルト: 100）
+    p
+        ビリビリ動画のページ番号（シリーズの何本目か、1始まり）
     """
     # スライドショーモード判定
     if len(url) >= 2:
@@ -86,7 +89,7 @@ async def root(
 
     match url_type:
         case UrlType.Video:
-            converted_url = convert(url)
+            converted_url = convert(url, p=p)
             logger.info(f"Video URL converted: {url} -> {converted_url}")
             return RedirectResponse(converted_url)
 
@@ -129,17 +132,20 @@ async def video(
     url: list[str] = Query(...),
     interval: int = Query(8, ge=1, le=30),
     loop: int = Query(100, ge=1),
+    p: int | None = Query(None, ge=1),
 ):
-    return await root(url, interval, loop)
+    return await root(url, interval, loop, p)
 
 
-def convert(url: str) -> str:
+def convert(url: str, p: int | None = None) -> str:
     """一部動画URLを専用URLに変換する
 
     Parameters
     ----------
     url
         変換対象の動画URL
+    p
+        ビリビリ動画のページ番号（シリーズの何本目か、1始まり）
 
     Examples
     --------
@@ -153,6 +159,9 @@ def convert(url: str) -> str:
     ビリビリ動画
     >>> convert("https://www.bilibili.com/video/BV1smLczPEa5/?spm_id_from=333.1007.tianma.1-1-1.click")
     'https://biliplayer.91vrchat.com/player/?url=https://www.bilibili.com/video/BV1smLczPEa5/?spm_id_from=333.1007.tianma.1-1-1.click'
+
+    >>> convert("https://www.bilibili.com/video/BV1y13462ESA", p=4)
+    'https://biliplayer.91vrchat.com/player/?url=https://www.bilibili.com/video/BV1y13462ESA&p=4'
 
     iwara
     >>> convert("https://www.iwara.tv/video/rdcIORhbbfaf15")
@@ -170,7 +179,10 @@ def convert(url: str) -> str:
 
     # ビリビリ動画
     if "bilibili.com/video/" in url:
-        return f"https://biliplayer.91vrchat.com/player/?url={url}"
+        result = f"https://biliplayer.91vrchat.com/player/?url={url}"
+        if p is not None:
+            result += f"&p={p}"
+        return result
 
     # iwara
     if "iwara.tv/video/" in url:
