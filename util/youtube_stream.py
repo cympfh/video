@@ -241,10 +241,10 @@ class YouTubeStream:
             "-o",
             str(outfile),
         ]
-        # default で品質、android は bot 判定時のフォールバック
+        # android は cookie を無視する。web_safari は cookie + PO を使う
         attempts = [
-            ["--extractor-args", "youtube:player_client=default,android"],
-            ["--extractor-args", "youtube:player_client=android"],
+            ["--extractor-args", "youtube:player_client=web_safari"],
+            ["--extractor-args", "youtube:player_client=web"],
         ]
 
         last_err = ""
