@@ -15,6 +15,30 @@ from fastapi.responses import FileResponse
 logger = logging.getLogger("uvicorn")
 
 _VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+_COOKIE_KEEP = {
+    "LOGIN_INFO",
+    "SID",
+    "HSID",
+    "SSID",
+    "APISID",
+    "SAPISID",
+    "__Secure-1PSID",
+    "__Secure-3PSID",
+    "__Secure-1PAPISID",
+    "__Secure-3PAPISID",
+    "__Secure-1PSIDTS",
+    "__Secure-3PSIDTS",
+    "SIDCC",
+    "__Secure-1PSIDCC",
+    "__Secure-3PSIDCC",
+    "PREF",
+    "VISITOR_INFO1_LIVE",
+    "VISITOR_PRIVACY_METADATA",
+    "CONSENT",
+    "SOCS",
+    "YSC",
+    "__Secure-ROLLOUT_TOKEN",
+}
 _YOUTUBE_HOSTS = {
     "youtube.com",
     "m.youtube.com",
@@ -71,6 +95,21 @@ def extract_video_id(url: str) -> str | None:
             if _VIDEO_ID_RE.fullmatch(parts[1]):
                 return parts[1]
     return None
+
+
+def _write_slim_cookies(src: Path, dest: Path) -> int:
+    """yt-dlp が 413 にならないよう認証に必要な cookie だけ残す"""
+    kept = ["# Netscape HTTP Cookie File"]
+    for line in src.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 7:
+            continue
+        if parts[5] in _COOKIE_KEEP:
+            kept.append(line)
+    dest.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    return len(kept) - 1
 
 
 class YouTubeStream:
@@ -149,8 +188,11 @@ class YouTubeStream:
                 continue
             seen.add(p)
             if p.is_file():
-                logger.info("yt-dlp cookies: %s", p)
-                return ["--cookies", str(p)]
+                dest = Path("/tmp/yt-dlp-cookies.txt")
+                n = _write_slim_cookies(p, dest)
+                dest.chmod(0o600)
+                logger.info("yt-dlp cookies: %s (%s of %s)", dest, n, p)
+                return ["--cookies", str(dest)]
         logger.warning("No YouTube cookies file found")
         return []
 
