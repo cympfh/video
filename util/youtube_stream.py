@@ -132,12 +132,26 @@ class YouTubeStream:
 
     def _cookies_args(self) -> list[str]:
         path = os.getenv("YOUTUBE_COOKIES") or os.getenv("YTDLP_COOKIES")
-        candidates = [Path(path)] if path else []
-        candidates.append(Path("cookies.txt"))
+        candidates = []
+        if path:
+            candidates.append(Path(path).expanduser())
+        candidates.extend(
+            [
+                Path("/home/ubuntu/firefox/cookie.txt"),
+                Path.home() / "cookie.txt",
+                Path("cookie.txt"),
+                Path("cookies.txt"),
+            ]
+        )
+        seen: set[Path] = set()
         for p in candidates:
+            if p in seen:
+                continue
+            seen.add(p)
             if p.is_file():
                 logger.info("yt-dlp cookies: %s", p)
                 return ["--cookies", str(p)]
+        logger.warning("No YouTube cookies file found")
         return []
 
     async def _run_yt_dlp(self, cmd: list[str]) -> tuple[int, str, str]:

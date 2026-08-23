@@ -1,5 +1,7 @@
 .claude/
 stream/*
+cookie.txt
+cookies.txt
 !stream/.gitkeep
 # Byte-compiled / optimized / DLL files
 __pycache__/

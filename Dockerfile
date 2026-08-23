@@ -13,4 +13,6 @@ RUN pip install uv
 COPY . .
 RUN uv sync
 
+ENV YOUTUBE_COOKIES=/home/ubuntu/firefox/cookie.txt
+
 CMD ["uv", "run", "fastapi", "run", "video-server.py", "--host", "0.0.0.0", "--port", "8080"]
