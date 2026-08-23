@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import logging
+import os
 import re
 import shutil
 import sys
@@ -109,52 +110,104 @@ class YouTubeStream:
             shutil.rmtree(path, ignore_errors=True)
 
     def _yt_dlp_bin(self) -> list[str]:
-        if shutil.which("yt-dlp"):
-            return ["yt-dlp"]
         return [sys.executable, "-m", "yt_dlp"]
 
+    def _js_runtime_args(self) -> list[str]:
+        """deno (default) / node を探して --js-runtimes を付ける"""
+        homes = [Path.home() / ".deno/bin/deno", Path.home() / ".local/bin/deno"]
+        deno_candidates = ["deno", "/usr/local/bin/deno", "/usr/bin/deno", *map(str, homes)]
+        for cand in deno_candidates:
+            found = shutil.which(cand) if cand == "deno" else cand
+            if found and os.path.isfile(found) and os.access(found, os.X_OK):
+                logger.info("yt-dlp JS runtime: deno (%s)", found)
+                return ["--js-runtimes", f"deno:{found}"]
+
+        node = shutil.which("node")
+        if node:
+            logger.info("yt-dlp JS runtime: node (%s)", node)
+            return ["--js-runtimes", f"node:{node}"]
+
+        logger.warning("No JS runtime (deno/node) found. YouTube download may fail.")
+        return []
+
+    def _cookies_args(self) -> list[str]:
+        path = os.getenv("YOUTUBE_COOKIES") or os.getenv("YTDLP_COOKIES")
+        candidates = [Path(path)] if path else []
+        candidates.append(Path("cookies.txt"))
+        for p in candidates:
+            if p.is_file():
+                logger.info("yt-dlp cookies: %s", p)
+                return ["--cookies", str(p)]
+        return []
+
+    async def _run_yt_dlp(self, cmd: list[str]) -> tuple[int, str, str]:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except FileNotFoundError:
+            raise HTTPException(status_code=500, detail="yt-dlp is not installed")
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self.DOWNLOAD_TIMEOUT)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            raise HTTPException(status_code=504, detail="yt-dlp timed out")
+        out = (stdout or b"").decode("utf-8", errors="replace")
+        err = (stderr or b"").decode("utf-8", errors="replace")
+        return proc.returncode or 0, out, err
+
     async def _download(self, url: str, outfile: Path) -> None:
-        cmd = [
+        format_sel = (
+            "bv*[vcodec^=avc1][height<=720]+ba[ext=m4a]/"
+            "bv*[height<=720][ext=mp4]+ba[ext=m4a]/"
+            "b[ext=mp4][height<=720]/"
+            "best"
+        )
+        base = [
             *self._yt_dlp_bin(),
             "--no-playlist",
             "--no-progress",
             "--no-mtime",
             "--force-overwrites",
+            "--remote-components",
+            "ejs:github",
+            *self._js_runtime_args(),
+            *self._cookies_args(),
             "-f",
-            "bv*[vcodec^=avc1][height<=720]+ba[ext=m4a]/bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[ext=mp4][height<=720]/best",
+            format_sel,
             "--merge-output-format",
             "mp4",
             "--remux-video",
             "mp4",
             "-o",
             str(outfile),
-            url,
         ]
-        logger.info(f"Running yt-dlp: {' '.join(cmd)}")
-        async with self._sema:
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-            except FileNotFoundError:
-                raise HTTPException(status_code=500, detail="yt-dlp is not installed")
-            try:
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self.DOWNLOAD_TIMEOUT)
-            except asyncio.TimeoutError:
-                proc.kill()
-                await proc.wait()
-                raise HTTPException(status_code=504, detail="yt-dlp timed out")
+        # default で品質、android は bot 判定時のフォールバック
+        attempts = [
+            ["--extractor-args", "youtube:player_client=default,android"],
+            ["--extractor-args", "youtube:player_client=android"],
+        ]
 
-        if proc.returncode != 0:
-            err = (stderr or b"").decode("utf-8", errors="replace")[-1000:]
-            logger.error(f"yt-dlp failed ({proc.returncode}): {err}")
-            raise HTTPException(status_code=502, detail="Failed to download YouTube video")
-        if stdout:
-            logger.info(stdout.decode("utf-8", errors="replace")[-500:])
-        if not outfile.exists() or outfile.stat().st_size <= 0:
-            raise HTTPException(status_code=502, detail="yt-dlp produced no output")
+        last_err = ""
+        async with self._sema:
+            for i, extra in enumerate(attempts, start=1):
+                cmd = [*base, *extra, "--", url]
+                logger.info("Running yt-dlp attempt %s/%s for %s", i, len(attempts), url)
+                rc, stdout, stderr = await self._run_yt_dlp(cmd)
+                if stdout:
+                    logger.info(stdout[-500:])
+                if rc == 0 and outfile.exists() and outfile.stat().st_size > 0:
+                    return
+                last_err = stderr[-1000:]
+                logger.warning("yt-dlp attempt %s failed (%s): %s", i, rc, last_err)
+                if outfile.exists():
+                    outfile.unlink()
+
+        logger.error("yt-dlp failed: %s", last_err)
+        raise HTTPException(status_code=502, detail="Failed to download YouTube video")
 
     async def get(self, url: str) -> FileResponse:
         """YouTube動画をダウンロードして返す"""

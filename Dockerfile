@@ -2,7 +2,11 @@ FROM python:3.12
 
 RUN apt-get update && apt-get install -y \
     ffmpeg \
-    imagemagick
+    imagemagick \
+    ca-certificates
+
+# yt-dlp の YouTube JS challenge 用
+COPY --from=denoland/deno:bin /deno /usr/local/bin/deno
 
 WORKDIR /app
 RUN pip install uv
