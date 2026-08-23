@@ -10,12 +10,14 @@ import util
 
 logger = logging.getLogger("uvicorn")
 istream = util.ImageStream()
+yt_stream = util.YouTubeStream()
 app = FastAPI(title="video")
 
 
 class UrlType(Enum):
     Image = "image"
     Video = "video"
+    YouTube = "youtube"
     YouTubeSearch = "youtube_search"
     Random = "random"
 
@@ -33,22 +35,22 @@ class UrlType(Enum):
         if not url.startswith(("http://", "https://")):
             raise HTTPException(status_code=400, detail="Invalid URL")
 
+        # YouTube動画
+        if util.is_youtube_url(url):
+            return cls.YouTube
+
         # 画像?
         if url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
             return cls.Image
         async with httpx.AsyncClient() as client:
             try:
-                response = await client.head(
-                    url, headers={"Accept": "*/*"}, timeout=2.0
-                )
+                response = await client.head(url, headers={"Accept": "*/*"}, timeout=2.0)
                 content_type = response.headers.get("content-type", "")
                 if content_type.startswith("image/"):
                     return cls.Image
             except httpx.RequestError:
                 logger.warning(f"Failed to fetch URL header: {url}")
-                raise HTTPException(
-                    status_code=400, detail="Failed to fetch URL header"
-                )
+                raise HTTPException(status_code=400, detail="Failed to fetch URL header")
 
         # その他は動画と見做す
         return cls.Video
@@ -77,9 +79,7 @@ async def root(
     """
     # スライドショーモード判定
     if len(url) >= 2:
-        logger.info(
-            f"Slideshow mode: {len(url)} images, duration={interval}s, loop={loop}"
-        )
+        logger.info(f"Slideshow mode: {len(url)} images, duration={interval}s, loop={loop}")
         return await istream.get_slideshow(urls=url, duration=interval, loop_count=loop)
 
     # 単一URL（既存の動作）
@@ -93,8 +93,15 @@ async def root(
             logger.info(f"Video URL converted: {url} -> {converted_url}")
             return RedirectResponse(converted_url)
 
+        case UrlType.YouTube:
+            logger.info(f"Downloading YouTube video: {url}")
+            return await yt_stream.get(url)
+
         case UrlType.Random:
             video_url = await util.Random().get()
+            if util.is_youtube_url(video_url):
+                logger.info(f"A random YouTube video chosen: {video_url}")
+                return await yt_stream.get(video_url)
             converted_url = convert(video_url)
             logger.info(f"A random video chosen: {converted_url}")
             return RedirectResponse(converted_url)
@@ -114,8 +121,8 @@ async def root(
                     index = int(parts[1])
                     youtube = util.YouTube()
                     video_info = await youtube.get_from_search(keyword, index)
-                    logger.info(f"Redirecting to YouTube video: {video_info['url']}")
-                    return RedirectResponse(video_info["url"])
+                    logger.info(f"Downloading YouTube search result: {video_info['url']}")
+                    return await yt_stream.get(video_info["url"])
                 except (ValueError, IndexError):
                     # インデックスが無効な場合は検索結果画像を表示
                     pass
