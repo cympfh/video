@@ -18,10 +18,16 @@ class UrlType(Enum):
     Video = "video"
     YouTubeSearch = "youtube_search"
     Random = "random"
+    RandomLive = "random-live"
 
     @classmethod
     async def from_url(cls, url: str) -> "UrlType":
         """URL種別を判定する"""
+        # Prefer random-live over random (longer alias first)
+        if url.startswith("random-live") or (
+            url.startswith("random-") and "random-live".startswith(url)
+        ):
+            return cls.RandomLive
         if "random".startswith(url):
             return cls.Random
 
@@ -97,6 +103,15 @@ async def root(
             video_url = await util.Random().get()
             converted_url = convert(video_url)
             logger.info(f"A random video chosen: {converted_url}")
+            return RedirectResponse(converted_url)
+
+        case UrlType.RandomLive:
+            try:
+                live_url = await util.RandomLive().get()
+            except LookupError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+            converted_url = convert(live_url)
+            logger.info(f"A random live stream chosen: {converted_url}")
             return RedirectResponse(converted_url)
 
         case UrlType.Image:

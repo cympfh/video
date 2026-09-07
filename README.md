@@ -74,3 +74,11 @@ http://s.cympfh.cc/video?url=random
 ```
 Returns random video from curated list (updated hourly).
 
+### 🔴 Random Live
+
+```
+http://s.cympfh.cc/video?url=random-live
+```
+Picks a currently-live YouTube stream from a curated list of channel IDs ([gist](https://gist.github.com/cympfh/ae2c89e7292097c177d38ac8cd71febb)). Uses the same time-based shuffle as `random`, then walks the list until a live channel is found. Returns HTTP 404 if nobody is live.
+
+Gist format: one YouTube channel ID per line; `#` starts a comment.

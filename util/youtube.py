@@ -273,3 +273,41 @@ class YouTube:
             )
 
         return str(result_image)
+
+    async def get_live_video_url(self, channel_id: str) -> Optional[str]:
+        """Return the watch URL of a channel's current live stream, or None.
+
+        Uses YouTube Data API v3 search with eventType=live.
+
+        Parameters
+        ----------
+        channel_id : str
+            YouTube channel ID (e.g. UCxxxxxxxx)
+
+        Returns
+        -------
+        Optional[str]
+            https://www.youtube.com/watch?v=... if live, else None
+        """
+        params = {
+            "part": "snippet",
+            "channelId": channel_id,
+            "eventType": "live",
+            "type": "video",
+            "maxResults": 1,
+            "key": self.api_key,
+        }
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{self.base_url}/search", params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            items = data.get("items", [])
+            if not items:
+                return None
+
+            video_id = items[0]["id"].get("videoId")
+            if not video_id:
+                return None
+            return f"https://www.youtube.com/watch?v={video_id}"
