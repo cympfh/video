@@ -79,6 +79,6 @@ http://s.cympfh.cc/video?url=random
 ```
 http://s.cympfh.cc/video?url=random-live
 ```
-厳選されたチャンネルIDリスト（[gist](https://gist.github.com/cympfh/ae2c89e7292097c177d38ac8cd71febb)）から、現在ライブ配信中のYouTubeチャンネルを選びます。`random` と同じ時刻ベースのシャッフル後、ライブ中のチャンネルが見つかるまで順に探索します。誰もライブしていない場合は HTTP 404 を返します。
+厳選されたチャンネルIDリスト（[gist](https://gist.github.com/cympfh/e8ee500adacbc1bbfc717ca7cbb2a9b4)）から、現在ライブ配信中のYouTubeチャンネルを選びます。`random` と同じ時刻ベースのシャッフル後、ライブ中のチャンネルが見つかるまで順に探索します。誰もライブしていない場合は HTTP 404 を返します。
 
-Gist形式: 1行に1つのYouTubeチャンネルID。`#` 以降はコメントです。
+Gist形式: 1行に1つのYouTubeチャンネルID（または `@handle`）。`#` 以降はコメントです。

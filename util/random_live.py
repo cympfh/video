@@ -10,13 +10,13 @@ class RandomLive:
     """Pick a currently-live YouTube stream from a curated channel list.
 
     Channel IDs are fetched from:
-    https://gist.github.com/cympfh/ae2c89e7292097c177d38ac8cd71febb
+    https://gist.github.com/cympfh/e8ee500adacbc1bbfc717ca7cbb2a9b4
     """
 
     def __init__(self):
         self.url = (
             "https://gist.githubusercontent.com/cympfh/"
-            "ae2c89e7292097c177d38ac8cd71febb/raw/random-live-users"
+            "e8ee500adacbc1bbfc717ca7cbb2a9b4/raw/random-live-users"
         )
 
     async def _fetch_channel_ids(self) -> list[str]:

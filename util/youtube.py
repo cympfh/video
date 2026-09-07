@@ -274,6 +274,38 @@ class YouTube:
 
         return str(result_image)
 
+
+    async def resolve_channel_id(self, channel_or_handle: str) -> Optional[str]:
+        """Resolve a channel ID or @handle to a UC… channel ID.
+
+        Parameters
+        ----------
+        channel_or_handle : str
+            YouTube channel ID (UC…) or handle (@name / name)
+
+        Returns
+        -------
+        Optional[str]
+            Channel ID, or None if not found
+        """
+        value = channel_or_handle.strip()
+        if value.startswith("UC") and len(value) >= 24 and " " not in value:
+            return value
+
+        handle = value[1:] if value.startswith("@") else value
+        params = {
+            "part": "id",
+            "forHandle": handle,
+            "key": self.api_key,
+        }
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{self.base_url}/channels", params=params)
+            response.raise_for_status()
+            items = response.json().get("items", [])
+            if not items:
+                return None
+            return items[0]["id"]
+
     async def get_live_video_url(self, channel_id: str) -> Optional[str]:
         """Return the watch URL of a channel's current live stream, or None.
 
@@ -289,9 +321,13 @@ class YouTube:
         Optional[str]
             https://www.youtube.com/watch?v=... if live, else None
         """
+        resolved = await self.resolve_channel_id(channel_id)
+        if not resolved:
+            return None
+
         params = {
             "part": "snippet",
-            "channelId": channel_id,
+            "channelId": resolved,
             "eventType": "live",
             "type": "video",
             "maxResults": 1,
