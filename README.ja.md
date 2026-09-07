@@ -73,3 +73,12 @@ http://s.cympfh.cc/video?url=y!cats!1    # 2番目の結果
 http://s.cympfh.cc/video?url=random
 ```
 厳選されたリストからランダムに動画を返します（1時間ごとに更新）。
+
+### 🔴 ランダムライブ
+
+```
+http://s.cympfh.cc/video?url=random-live
+```
+厳選されたチャンネルIDリスト（[gist](https://gist.github.com/cympfh/e8ee500adacbc1bbfc717ca7cbb2a9b4)）から、現在ライブ配信中のYouTubeチャンネルを選びます。`random` と同じ時刻ベースのシャッフル後、ライブ中のチャンネルが見つかるまで順に探索します。誰もライブしていない場合は HTTP 404 を返します。
+
+Gist形式: 1行に1つのYouTubeチャンネルID（または `@handle`）。`#` 以降はコメントです。

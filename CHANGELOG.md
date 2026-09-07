@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Added
 
 - Query parameter `p` for Bilibili multi-part videos (1-based page index). Forwarded to biliplayer as `&p=N`.
+- `random-live` alias: pick a currently-live YouTube stream from a curated channel-ID gist.
 
 ## [2026-01-06]
 
