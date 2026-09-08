@@ -62,7 +62,7 @@
   <main>
     <form id="form" autocomplete="off">
       <label class="hint" for="url">Enter a Video URL</label>
-      <input id="url" type="url" name="url" placeholder="https://" required autofocus>
+      <input id="url" type="text" name="url" placeholder="https://" required autofocus>
     </form>
     <div class="result">
       <div id="converted" class="converted"></div>
@@ -79,8 +79,17 @@
     const converted = document.getElementById("converted");
     const copy = document.getElementById("copy");
 
-    function built() {
+    function sourceUrl() {
       const value = input.value.trim();
+      if (!value) return "";
+      if (value.startsWith("sm") || value.startsWith("so")) {
+        return "https://www.nicovideo.jp/watch/" + value;
+      }
+      return value;
+    }
+
+    function built() {
+      const value = sourceUrl();
       if (!value) return "";
       return "https://s.cympfh.cc/video?url=" + encodeURIComponent(value);
     }
