@@ -78,7 +78,7 @@
         </svg>
       </button>
     </div>
-    <p class="support">Supporting<br><strong id="fill-youtube">YouTube</strong> / <strong id="fill-niconico">niconico</strong> / <strong>bilibili</strong> / <strong>X</strong> / <strong>iwara</strong></p>
+    <p class="support">Supporting<br><strong id="fill-youtube">YouTube</strong> / <strong id="fill-niconico">niconico</strong> / <strong id="fill-bilibili">bilibili</strong> / <strong>X</strong> / <strong>iwara</strong></p>
   </main>
   <script>
     const input = document.getElementById("url");
@@ -116,6 +116,10 @@
     });
     document.getElementById("fill-niconico").addEventListener("click", () => {
       input.value = "https://www.nicovideo.jp/watch/sm29550180";
+      render();
+    });
+    document.getElementById("fill-bilibili").addEventListener("click", () => {
+      input.value = "https://www.bilibili.com/video/BV1o5411R7vM";
       render();
     });
     document.getElementById("form").addEventListener("submit", (event) => {
