@@ -78,7 +78,7 @@
         </svg>
       </button>
     </div>
-    <p class="support">Supporting<br><strong id="fill-youtube">YouTube</strong> / <strong>niconico</strong> / <strong>bilibili</strong> / <strong>X</strong> / <strong>iwara</strong></p>
+    <p class="support">Supporting<br><strong id="fill-youtube">YouTube</strong> / <strong id="fill-niconico">niconico</strong> / <strong>bilibili</strong> / <strong>X</strong> / <strong>iwara</strong></p>
   </main>
   <script>
     const input = document.getElementById("url");
@@ -112,6 +112,10 @@
     input.addEventListener("input", render);
     document.getElementById("fill-youtube").addEventListener("click", () => {
       input.value = "https://www.youtube.com/watch?v=y9QQS1a1Mzs";
+      render();
+    });
+    document.getElementById("fill-niconico").addEventListener("click", () => {
+      input.value = "https://www.nicovideo.jp/watch/sm29550180";
       render();
     });
     document.getElementById("form").addEventListener("submit", (event) => {
