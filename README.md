@@ -21,7 +21,7 @@ Note: VRChat supports YouTube directly, so conversion may not be needed.
 
 **Bilibili**
 ```
-https://s.cympfh.cc/video?url=https://www.bilibili.com/video/BV1sNuDzsEjM
+https://s.cympfh.cc/video?url=https://www.bilibili.com/video/BV16P4y1M7AR
 ```
 Wraps URLs for VRChat compatibility.
 
