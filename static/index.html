@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>s.cympfh.cc/video</title>
+  <link rel="icon" href="/video/favicon.ico" sizes="64x64">
+  <link rel="icon" type="image/png" href="/video/favicon.png">
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: system-ui, sans-serif;
+      background: #f6f6f6;
+      color: #222;
+    }
+    main { width: min(720px, calc(100% - 48px)); }
+    label.hint {
+      display: block;
+      margin: 0 0 0.45rem 0.15rem;
+      color: #888;
+      font-size: 0.85rem;
+    }
+    .field {
+      position: relative;
+    }
+    #url {
+      width: 100%;
+      font-size: 1.6rem;
+      padding: 0.7em 2.6em 0.7em 0.8em;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+    }
+    button.clear {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 36px;
+      height: 36px;
+      border: 0;
+      background: transparent;
+      color: #888;
+      cursor: pointer;
+      padding: 0;
+    }
+    button.clear:hover { color: #333; }
+    button.clear[hidden] { display: none; }
+    .result {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 1.2rem;
+      min-height: 2.4rem;
+    }
+    .converted {
+      flex: 1;
+      color: #888;
+      word-break: break-all;
+      font-size: 1rem;
+    }
+    button.copy {
+      flex: none;
+      width: 44px;
+      height: 44px;
+      border: 0;
+      background: transparent;
+      color: #888;
+      cursor: pointer;
+      padding: 0;
+    }
+    button.copy:hover { color: #333; }
+    button.copy.ok { color: #2f9e44; }
+    button.copy[hidden] { display: none; }
+    .support {
+      margin-top: 1.6rem;
+      color: #888;
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <form id="form" autocomplete="off">
+      <label class="hint" for="url">Enter a Video URL</label>
+      <div class="field">
+        <input id="url" type="text" name="url" placeholder="https://" required autofocus>
+        <button id="clear" class="clear" type="button" hidden aria-label="クリア">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+            <path d="M6 6l12 12"></path>
+            <path d="M18 6L6 18"></path>
+          </svg>
+        </button>
+      </div>
+    </form>
+    <div class="result">
+      <div id="converted" class="converted"></div>
+      <button id="copy" class="copy" type="button" hidden aria-label="コピー">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="11" height="11" rx="2"></rect>
+          <path d="M5 15V5a2 2 0 0 1 2-2h10"></path>
+        </svg>
+      </button>
+    </div>
+    <p class="support">Supporting<br><strong id="fill-youtube">YouTube</strong> / <strong id="fill-niconico">niconico</strong> / <strong id="fill-bilibili">bilibili</strong> / <strong id="fill-x">X</strong> / <strong id="fill-iwara">iwara</strong></p>
+  </main>
+  <script>
+    const input = document.getElementById("url");
+    const converted = document.getElementById("converted");
+    const copy = document.getElementById("copy");
+    const clear = document.getElementById("clear");
+
+    function sourceUrl() {
+      const value = input.value.trim();
+      if (!value) return "";
+      if (value.startsWith("sm") || value.startsWith("so")) {
+        return "https://www.nicovideo.jp/watch/" + value;
+      }
+      if (value.startsWith("BV")) {
+        return "https://www.bilibili.com/video/" + value;
+      }
+      return value;
+    }
+
+    function built() {
+      const value = sourceUrl();
+      if (!value) return "";
+      return "https://s.cympfh.cc/video?url=" + encodeURIComponent(value);
+    }
+
+    function render() {
+      const href = built();
+      converted.textContent = href;
+      copy.hidden = !href;
+      clear.hidden = !input.value;
+    }
+
+    input.addEventListener("input", render);
+    clear.addEventListener("click", () => {
+      input.value = "";
+      render();
+      input.focus();
+    });
+    document.getElementById("fill-youtube").addEventListener("click", () => {
+      input.value = "https://www.youtube.com/watch?v=y9QQS1a1Mzs";
+      render();
+    });
+    document.getElementById("fill-niconico").addEventListener("click", () => {
+      input.value = "https://www.nicovideo.jp/watch/sm29550180";
+      render();
+    });
+    document.getElementById("fill-bilibili").addEventListener("click", () => {
+      input.value = "https://www.bilibili.com/video/BV1o5411R7vM";
+      render();
+    });
+    document.getElementById("fill-x").addEventListener("click", () => {
+      input.value = "https://x.com/pa_draws/status/1849228056537497835";
+      render();
+    });
+    document.getElementById("fill-iwara").addEventListener("click", () => {
+      input.value = "https://www.iwara.tv/video/SLKmO41sKBLOHr";
+      render();
+    });
+    document.getElementById("form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      render();
+    });
+    copy.addEventListener("click", async () => {
+      const href = built();
+      if (!href) return;
+      await navigator.clipboard.writeText(href);
+      copy.classList.add("ok");
+      setTimeout(() => copy.classList.remove("ok"), 1000);
+    });
+  </script>
+</body>
+</html>
