@@ -56,6 +56,12 @@
     button.copy:hover { color: #333; }
     button.copy.ok { color: #2f9e44; }
     button.copy[hidden] { display: none; }
+    details.support {
+      margin-top: 1.6rem;
+      color: #888;
+      font-size: 0.85rem;
+    }
+    details.support summary { cursor: pointer; }
   </style>
 </head>
 <body>
@@ -73,6 +79,10 @@
         </svg>
       </button>
     </div>
+    <details class="support">
+      <summary>Supporting</summary>
+      YouTube / nicovideo / bilibili / X / iwara
+    </details>
   </main>
   <script>
     const input = document.getElementById("url");
