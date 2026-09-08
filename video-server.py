@@ -71,11 +71,13 @@ def index_page() -> FileResponse:
 
 
 @app.get("/favicon.ico", include_in_schema=False)
+@app.get("/video/favicon.ico", include_in_schema=False)
 async def favicon_ico():
     return FileResponse(FAVICON_ICO)
 
 
 @app.get("/favicon.png", include_in_schema=False)
+@app.get("/video/favicon.png", include_in_schema=False)
 async def favicon_png():
     return FileResponse(FAVICON_PNG)
 
