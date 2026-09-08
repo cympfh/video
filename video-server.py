@@ -62,10 +62,22 @@ class UrlType(Enum):
 
 
 INDEX_HTML = Path(__file__).parent / "static" / "index.html"
+FAVICON_ICO = Path(__file__).parent / "static" / "favicon.ico"
+FAVICON_PNG = Path(__file__).parent / "static" / "favicon.png"
 
 
 def index_page() -> FileResponse:
     return FileResponse(INDEX_HTML)
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon_ico():
+    return FileResponse(FAVICON_ICO)
+
+
+@app.get("/favicon.png", include_in_schema=False)
+async def favicon_png():
+    return FileResponse(FAVICON_PNG)
 
 
 @app.get("/")
