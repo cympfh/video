@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-FastAPI redirect service for VRChat video players. `GET /` and `GET /` alias `GET /video` take `url` (repeatable), plus `interval` / `loop` for image slideshows and `p` for Bilibili page index.
+FastAPI redirect service for VRChat video players. `GET /` and `GET /video` take `url` (repeatable), plus `interval` / `loop` for image slideshows and `p` for Bilibili page index.
 
 Public examples use `https://s.cympfh.cc/video?url=...` (https, not http).
 
