@@ -78,7 +78,7 @@
         </svg>
       </button>
     </div>
-    <p class="support">Supporting<br><strong id="fill-youtube">YouTube</strong> / <strong id="fill-niconico">niconico</strong> / <strong id="fill-bilibili">bilibili</strong> / <strong id="fill-x">X</strong> / <strong>iwara</strong></p>
+    <p class="support">Supporting<br><strong id="fill-youtube">YouTube</strong> / <strong id="fill-niconico">niconico</strong> / <strong id="fill-bilibili">bilibili</strong> / <strong id="fill-x">X</strong> / <strong id="fill-iwara">iwara</strong></p>
   </main>
   <script>
     const input = document.getElementById("url");
@@ -124,6 +124,10 @@
     });
     document.getElementById("fill-x").addEventListener("click", () => {
       input.value = "https://x.com/pa_draws/status/1849228056537497835";
+      render();
+    });
+    document.getElementById("fill-iwara").addEventListener("click", () => {
+      input.value = "https://www.iwara.tv/video/SLKmO41sKBLOHr";
       render();
     });
     document.getElementById("form").addEventListener("submit", (event) => {
