@@ -95,13 +95,13 @@ async def root(
 
     match url_type:
         case UrlType.Video:
-            converted_url = convert(url, p=p)
+            converted_url = await convert(url, p=p)
             logger.info(f"Video URL converted: {url} -> {converted_url}")
             return RedirectResponse(converted_url)
 
         case UrlType.Random:
             video_url = await util.Random().get()
-            converted_url = convert(video_url)
+            converted_url = await convert(video_url)
             logger.info(f"A random video chosen: {converted_url}")
             return RedirectResponse(converted_url)
 
@@ -110,7 +110,7 @@ async def root(
                 live_url = await util.RandomLive().get()
             except LookupError as e:
                 raise HTTPException(status_code=404, detail=str(e))
-            converted_url = convert(live_url)
+            converted_url = await convert(live_url)
             logger.info(f"A random live stream chosen: {converted_url}")
             return RedirectResponse(converted_url)
 
@@ -152,7 +152,7 @@ async def video(
     return await root(url, interval, loop, p)
 
 
-def convert(url: str, p: int | None = None) -> str:
+async def convert(url: str, p: int | None = None) -> str:
     """一部動画URLを専用URLに変換する
 
     Parameters
@@ -165,25 +165,26 @@ def convert(url: str, p: int | None = None) -> str:
     Examples
     --------
     ニコニコ動画
-    >>> convert("https://www.nicovideo.jp/watch/sm44886216")
+    >>> import asyncio
+    >>> asyncio.run(convert("https://www.nicovideo.jp/watch/sm44886216"))
     'https://www.nicovideo.life/watch?v=sm44886216'
 
-    >>> convert("https://www.nicovideo.jp/watch/sm44886216?hoge=fuga")
+    >>> asyncio.run(convert("https://www.nicovideo.jp/watch/sm44886216?hoge=fuga"))
     'https://www.nicovideo.life/watch?v=sm44886216'
 
     ビリビリ動画
-    >>> convert("https://www.bilibili.com/video/BV1smLczPEa5/?spm_id_from=333.1007.tianma.1-1-1.click")
+    >>> asyncio.run(convert("https://www.bilibili.com/video/BV1smLczPEa5/?spm_id_from=333.1007.tianma.1-1-1.click"))
     'https://biliplayer.91vrchat.com/player/?url=https://www.bilibili.com/video/BV1smLczPEa5/?spm_id_from=333.1007.tianma.1-1-1.click'
 
-    >>> convert("https://www.bilibili.com/video/BV1y13462ESA", p=4)
+    >>> asyncio.run(convert("https://www.bilibili.com/video/BV1y13462ESA", p=4))
     'https://biliplayer.91vrchat.com/player/?url=https://www.bilibili.com/video/BV1y13462ESA&p=4'
 
     iwara
-    >>> convert("https://www.iwara.tv/video/rdcIORhbbfaf15")
+    >>> asyncio.run(convert("https://www.iwara.tv/video/rdcIORhbbfaf15"))
     'https://nicovrc.net/proxy/?https://www.iwara.tv/video/rdcIORhbbfaf15'
 
     それ以外はそのまま返す
-    >>> convert("https://www.youtube.com/watch?v=abcd")
+    >>> asyncio.run(convert("https://www.youtube.com/watch?v=abcd"))
     'https://www.youtube.com/watch?v=abcd'
     """
 
@@ -203,9 +204,14 @@ def convert(url: str, p: int | None = None) -> str:
     if "iwara.tv/video/" in url:
         return f"https://nicovrc.net/proxy/?{url}"
 
-    # X (Twitter)
-    if "x.com/" in url:
-        return f"https://nicovrc.net/proxy/?{url}"
+    # X (Twitter): syndication で mp4 を直接返す。nicovrc は使わない。
+    x = util.X()
+    if x.is_status(url):
+        try:
+            return await x.resolve_mp4(url)
+        except (LookupError, httpx.HTTPError, ValueError) as e:
+            logger.warning(f"Failed to resolve X video: {url}: {e}")
+            raise HTTPException(status_code=502, detail="Failed to resolve X video")
 
     # それ以外はそのまま返す
     return url
