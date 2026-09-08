@@ -208,7 +208,7 @@ async def convert(url: str, p: int | None = None) -> str:
 
     iwara
     >>> asyncio.run(convert("https://www.iwara.tv/video/rdcIORhbbfaf15"))
-    'https://nicovrc.net/proxy/?https://www.iwara.tv/video/rdcIORhbbfaf15'
+    'https://nicovrc.net/?url=https://www.iwara.tv/video/rdcIORhbbfaf15'
 
     それ以外はそのまま返す
     >>> asyncio.run(convert("https://www.youtube.com/watch?v=abcd"))
@@ -229,7 +229,7 @@ async def convert(url: str, p: int | None = None) -> str:
 
     # iwara
     if "iwara.tv/video/" in url:
-        return f"https://nicovrc.net/proxy/?{url}"
+        return f"https://nicovrc.net/?url={url}"
 
     # X (Twitter): syndication で mp4 を直接返す。nicovrc は使わない。
     x = util.X()
