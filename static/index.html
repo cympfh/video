@@ -17,6 +17,12 @@
       color: #222;
     }
     main { width: min(720px, calc(100% - 48px)); }
+    label.hint {
+      display: block;
+      margin: 0 0 0.45rem 0.15rem;
+      color: #888;
+      font-size: 0.85rem;
+    }
     input[type="url"] {
       width: 100%;
       font-size: 1.6rem;
@@ -48,12 +54,14 @@
       padding: 0;
     }
     button.copy:hover { color: #333; }
+    button.copy.ok { color: #2f9e44; }
     button.copy[hidden] { display: none; }
   </style>
 </head>
 <body>
   <main>
     <form id="form" autocomplete="off">
+      <label class="hint" for="url">Enter a Video Url</label>
       <input id="url" type="url" name="url" placeholder="https://" required autofocus>
     </form>
     <div class="result">
@@ -92,6 +100,8 @@
       const href = built();
       if (!href) return;
       await navigator.clipboard.writeText(href);
+      copy.classList.add("ok");
+      setTimeout(() => copy.classList.remove("ok"), 1000);
     });
   </script>
 </body>
