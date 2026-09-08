@@ -23,7 +23,7 @@
       color: #888;
       font-size: 0.85rem;
     }
-    input[type="url"] {
+    #url {
       width: 100%;
       font-size: 1.6rem;
       padding: 0.7em 0.8em;
@@ -84,6 +84,9 @@
       if (!value) return "";
       if (value.startsWith("sm") || value.startsWith("so")) {
         return "https://www.nicovideo.jp/watch/" + value;
+      }
+      if (value.startsWith("BV")) {
+        return "https://www.bilibili.com/video/" + value;
       }
       return value;
     }
