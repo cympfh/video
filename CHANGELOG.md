@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- Index page: visiting `/` or `/video` without `url` shows a form that builds `https://s.cympfh.cc/video?url=...` and copies it.
+
 - Query parameter `p` for Bilibili multi-part videos (1-based page index). Forwarded to biliplayer as `&p=N`.
 - `random-live` alias: pick a currently-live YouTube stream from a curated channel-ID gist.
 

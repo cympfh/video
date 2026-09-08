@@ -1,9 +1,10 @@
 import logging
+from pathlib import Path
 from enum import Enum
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 import util
@@ -60,9 +61,16 @@ class UrlType(Enum):
         return cls.Video
 
 
+INDEX_HTML = Path(__file__).parent / "static" / "index.html"
+
+
+def index_page() -> FileResponse:
+    return FileResponse(INDEX_HTML)
+
+
 @app.get("/")
 async def root(
-    url: list[str] = Query(...),
+    url: list[str] | None = Query(None),
     interval: int = Query(8, ge=1, le=30),
     loop: int = Query(100, ge=1),
     p: int | None = Query(None, ge=1),
@@ -81,6 +89,9 @@ async def root(
     p
         ビリビリ動画のページ番号（シリーズの何本目か、1始まり）
     """
+    if not url:
+        return index_page()
+
     # スライドショーモード判定
     if len(url) >= 2:
         logger.info(
@@ -144,11 +155,13 @@ async def root(
 
 @app.get("/video")
 async def video(
-    url: list[str] = Query(...),
+    url: list[str] | None = Query(None),
     interval: int = Query(8, ge=1, le=30),
     loop: int = Query(100, ge=1),
     p: int | None = Query(None, ge=1),
 ):
+    if not url:
+        return index_page()
     return await root(url, interval, loop, p)
 
 

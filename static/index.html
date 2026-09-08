@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>s.cympfh.cc/video</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: system-ui, sans-serif;
+      background: #f6f6f6;
+      color: #222;
+    }
+    main { width: min(720px, calc(100% - 48px)); }
+    input[type="url"] {
+      width: 100%;
+      font-size: 1.6rem;
+      padding: 0.7em 0.8em;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+    }
+    .result {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 1.2rem;
+      min-height: 2.4rem;
+    }
+    .converted {
+      flex: 1;
+      color: #888;
+      word-break: break-all;
+      font-size: 1rem;
+    }
+    button.copy {
+      flex: none;
+      width: 44px;
+      height: 44px;
+      border: 0;
+      background: transparent;
+      color: #888;
+      cursor: pointer;
+      padding: 0;
+    }
+    button.copy:hover { color: #333; }
+    button.copy[hidden] { display: none; }
+  </style>
+</head>
+<body>
+  <main>
+    <form id="form" autocomplete="off">
+      <input id="url" type="url" name="url" placeholder="https://" required autofocus>
+    </form>
+    <div class="result">
+      <div id="converted" class="converted"></div>
+      <button id="copy" class="copy" type="button" hidden aria-label="コピー">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="11" height="11" rx="2"></rect>
+          <path d="M5 15V5a2 2 0 0 1 2-2h10"></path>
+        </svg>
+      </button>
+    </div>
+  </main>
+  <script>
+    const input = document.getElementById("url");
+    const converted = document.getElementById("converted");
+    const copy = document.getElementById("copy");
+
+    function built() {
+      const value = input.value.trim();
+      if (!value) return "";
+      return "https://s.cympfh.cc/video?url=" + encodeURIComponent(value);
+    }
+
+    function render() {
+      const href = built();
+      converted.textContent = href;
+      copy.hidden = !href;
+    }
+
+    input.addEventListener("input", render);
+    document.getElementById("form").addEventListener("submit", (event) => {
+      event.preventDefault();
+      render();
+    });
+    copy.addEventListener("click", async () => {
+      const href = built();
+      if (!href) return;
+      await navigator.clipboard.writeText(href);
+    });
+  </script>
+</body>
+</html>
