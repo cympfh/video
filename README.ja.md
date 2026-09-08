@@ -79,4 +79,4 @@ https://s.cympfh.cc/video?url=random
 ```
 https://s.cympfh.cc/video?url=random-live
 ```
-厳選したリストから、生放送を返します。1時間ごとに更新。
+厳選されたリストからランダムに生放送を返します（1時間ごとに更新）。

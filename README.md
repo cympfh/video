@@ -81,4 +81,4 @@ Returns random video from curated list (updated hourly).
 ```
 https://s.cympfh.cc/video?url=random-live
 ```
-Starts a random live broadcast. Updates once per hour.
+Returns random live broadcast from curated list (updated hourly).
