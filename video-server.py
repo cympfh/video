@@ -95,7 +95,7 @@ async def root(
 
     match url_type:
         case UrlType.Video:
-            converted_url = convert(url, p=p)
+            converted_url = await playable(url, p=p)
             logger.info(f"Video URL converted: {url} -> {converted_url}")
             return RedirectResponse(converted_url)
 
@@ -150,6 +150,21 @@ async def video(
     p: int | None = Query(None, ge=1),
 ):
     return await root(url, interval, loop, p)
+
+
+async def playable(url: str, p: int | None = None) -> str:
+    """Return a URL a video player can open.
+
+    X status pages go through nicovrc only as a resolver. The follow-up
+    nicovrc /video/ player page hangs, so redirect to the twimg mp4 instead.
+    """
+    if util.is_x_status(url):
+        try:
+            return await util.resolve_mp4(url)
+        except (LookupError, httpx.HTTPError) as e:
+            logger.warning(f"Failed to resolve X video: {url}: {e}")
+            raise HTTPException(status_code=502, detail="Failed to resolve X video")
+    return convert(url, p=p)
 
 
 def convert(url: str, p: int | None = None) -> str:

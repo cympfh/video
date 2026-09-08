@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Fixed
+
+- X/Twitter status URLs redirect to the resolved `video.twimg.com` mp4 instead of the hanging nicovrc player page.
+
 ### Added
 
 - Query parameter `p` for Bilibili multi-part videos (1-based page index). Forwarded to biliplayer as `&p=N`.
