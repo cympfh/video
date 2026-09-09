@@ -207,8 +207,7 @@ async def convert(url: str, p: int | None = None) -> str:
     'https://biliplayer.91vrchat.com/player/?url=https://www.bilibili.com/video/BV1y13462ESA&p=4'
 
     iwara
-    >>> asyncio.run(convert("https://www.iwara.tv/video/rdcIORhbbfaf15"))
-    'https://nicovrc.net/?url=https://www.iwara.tv/video/rdcIORhbbfaf15'
+    公開動画は再生直前に api.iwara.tv から Source の mp4 URL を取る。固定 URL ではない。
 
     それ以外はそのまま返す
     >>> asyncio.run(convert("https://www.youtube.com/watch?v=abcd"))
@@ -227,9 +226,14 @@ async def convert(url: str, p: int | None = None) -> str:
             result += f"&p={p}"
         return result
 
-    # iwara
-    if "iwara.tv/video/" in url:
-        return f"https://nicovrc.net/?url={url}"
+    # iwara: 公開 API から mp4 を直接返す。nicovrc は使わない。
+    iwara = util.Iwara()
+    if iwara.is_video(url):
+        try:
+            return await iwara.resolve_mp4(url)
+        except (LookupError, httpx.HTTPError, ValueError) as e:
+            logger.warning(f"Failed to resolve iwara video: {url}: {e}")
+            raise HTTPException(status_code=502, detail="Failed to resolve iwara video")
 
     # X (Twitter): syndication で mp4 を直接返す。nicovrc は使わない。
     x = util.X()

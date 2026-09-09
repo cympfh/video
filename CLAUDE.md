@@ -25,7 +25,7 @@ Public examples use `https://s.cympfh.cc/video?url=...` (https, not http).
 
 - **NicoNico** (`nicovideo.jp/watch/sm...`): rewrite to `https://www.nicovideo.life/watch?v={id}`.
 - **Bilibili**: wrap with `https://biliplayer.91vrchat.com/player/?url=`. Optional query `p` (1-based) is appended as `&p=N`. Do not put `p` inside the raw video URL; the top-level query parser strips it.
-- **iwara** (`iwara.tv/video/`): `https://nicovrc.net/?url={url}`.
+- **iwara** (`iwara.tv/video/`): `util.Iwara.resolve_mp4()`. No nicovrc. Re-resolve near playback; the view URL expires in about an hour.
 - **X / Twitter** (`x.com` or `twitter.com` `/status/{id}`): `util.X.resolve_mp4()`. No nicovrc.
 - **random**: gist list, shuffle seeded by UTC `YYYY/MM/DD`, index `hour % len`. Same day and hour returns the same video.
 - **random-live**: same time seed, then walk the list until a channel is live. `?url=random-live` must be matched before the `random` prefix. Gist: secret `https://gist.github.com/cympfh/e8ee500adacbc1bbfc717ca7cbb2a9b4` (`random-live-users`, one `@handle` or channel ID per line). 404 if nobody is live.
@@ -39,7 +39,7 @@ These were checked 2026-09-08 against the README samples.
 - **X does not use nicovrc.** Old code sent `x.com` to `nicovrc.net/proxy/?`, which 302s to `nicovrc.net/video/?url=...mp4`. That `/video/` player page hung (0 bytes, timeout) from more than one host. The twimg mp4 itself was fine (~97s, h264 1280x720).
 - **X syndication** (`https://cdn.syndication.twimg.com/tweet-result?id=&token=`): public embed JSON, not the paid API. No post, search, or auth. Returns tweet text, user, and `mediaDetails[].video_info.variants`. We pick the highest-bitrate `video/mp4`. Token is `((id / 1e15) * pi)` with zeros and the decimal point stripped. Works for public status URLs that include video. Protected accounts are not returned. `possibly_sensitive` is not specially blocked; if the JSON has an mp4 we redirect, otherwise 502. Not verified against adult tweets.
 - **NicoNico is indirectly nicovrc.** We only rewrite to `nicovideo.life`. That host 302s to `https://nicovrc.net/?url={original}?site=nicovideo.life_video`, and `https://www.nicovideo.life/` itself 302s to `https://nicovrc.net`. For the README sample that nicovrc URL returned `200` `application/vnd.apple.mpegurl` immediately. That is a different path from the hanging `/video/` player used by the old X proxy.
-- **iwara** calls `nicovrc.net/?url=` directly (the current nicovrc form; old `/proxy/?` still works but is the path they asked callers to leave). If nicovrc is down, iwara breaks. X no longer does.
+- **iwara does not use nicovrc.** `GET https://api.iwara.tv/video/{id}` returns `fileUrl`. `X-Version` is `sha1("{file-uuid}_{expires}_mSvL05GfEmeEmsEYfGCnVpEjYgTJraJN")`. That list includes `Source`; without the header only `360` and `preview` come back. Prefer `src.view` (protocol-relative, host changes). No login or cookie. `fileUrl` expires about an hour after the API call, so resolve at request time. Private or missing videos are 502.
 - **Bilibili** depends on `biliplayer.91vrchat.com`, not nicovrc. README sample BV was replaced with `BV16P4y1M7AR` after the previous sample disappeared (PR #8).
 
 ## Recent changes
