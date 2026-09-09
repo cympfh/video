@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
-- iwara URLs resolve to a direct mp4 via `api.iwara.tv`, without nicovrc.
+- iwara URLs use `https://nicovrc.net/?url=` instead of `nicovrc.net/proxy/?`.
 - X/Twitter status URLs resolve to a `video.twimg.com` mp4 via the syndication endpoint, without nicovrc.
 
 ### Added
