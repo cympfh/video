@@ -65,6 +65,7 @@
       cursor: pointer;
     }
     .converted:empty { cursor: default; }
+    .converted.ok { color: #2f9e44; }
     button.copy {
       flex: none;
       width: 44px;
@@ -177,7 +178,11 @@
       if (!href) return;
       await navigator.clipboard.writeText(href);
       copy.classList.add("ok");
-      setTimeout(() => copy.classList.remove("ok"), 1000);
+      converted.classList.add("ok");
+      setTimeout(() => {
+        copy.classList.remove("ok");
+        converted.classList.remove("ok");
+      }, 1000);
     }
     copy.addEventListener("click", copyBuilt);
     converted.addEventListener("click", copyBuilt);
