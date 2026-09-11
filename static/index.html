@@ -62,7 +62,12 @@
       color: #888;
       word-break: break-all;
       font-size: 1rem;
+      cursor: pointer;
     }
+    .converted:empty { cursor: default; }
+    .converted:hover:not(:empty) { color: #333; }
+    .converted.ok,
+    .converted.ok:hover { color: #339af0; }
     button.copy {
       flex: none;
       width: 44px;
@@ -74,13 +79,14 @@
       padding: 0;
     }
     button.copy:hover { color: #333; }
-    button.copy.ok { color: #2f9e44; }
+    button.copy.ok { color: #339af0; }
     button.copy[hidden] { display: none; }
     .support {
       margin-top: 1.6rem;
       color: #888;
       font-size: 0.85rem;
     }
+    .support strong { cursor: pointer; }
   </style>
 </head>
 <body>
@@ -169,13 +175,19 @@
       event.preventDefault();
       render();
     });
-    copy.addEventListener("click", async () => {
+    async function copyBuilt() {
       const href = built();
       if (!href) return;
       await navigator.clipboard.writeText(href);
       copy.classList.add("ok");
-      setTimeout(() => copy.classList.remove("ok"), 1000);
-    });
+      converted.classList.add("ok");
+      setTimeout(() => {
+        copy.classList.remove("ok");
+        converted.classList.remove("ok");
+      }, 1000);
+    }
+    copy.addEventListener("click", copyBuilt);
+    converted.addEventListener("click", copyBuilt);
   </script>
 </body>
 </html>
