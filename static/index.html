@@ -62,7 +62,9 @@
       color: #888;
       word-break: break-all;
       font-size: 1rem;
+      cursor: pointer;
     }
+    .converted:empty { cursor: default; }
     button.copy {
       flex: none;
       width: 44px;
@@ -170,13 +172,15 @@
       event.preventDefault();
       render();
     });
-    copy.addEventListener("click", async () => {
+    async function copyBuilt() {
       const href = built();
       if (!href) return;
       await navigator.clipboard.writeText(href);
       copy.classList.add("ok");
       setTimeout(() => copy.classList.remove("ok"), 1000);
-    });
+    }
+    copy.addEventListener("click", copyBuilt);
+    converted.addEventListener("click", copyBuilt);
   </script>
 </body>
 </html>
