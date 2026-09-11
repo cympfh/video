@@ -65,7 +65,9 @@
       cursor: pointer;
     }
     .converted:empty { cursor: default; }
-    .converted.ok { color: #339af0; }
+    .converted:hover:not(:empty) { color: #333; }
+    .converted.ok,
+    .converted.ok:hover { color: #339af0; }
     button.copy {
       flex: none;
       width: 44px;
