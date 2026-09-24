@@ -11,12 +11,12 @@ Public examples use `https://s.cympfh.cc/video?url=...` (https, not http).
 ## Architecture
 
 - **Main server**: `video-server.py`. `convert()` is async. Video / random / random-live paths `await convert()`.
-- **Utility modules** in `util/`:
-  - `youtube.py` - YouTube Data API search and thumbnails. Needs `YOUTUBE_API_KEY`.
-  - `image_stream.py` - Image and slideshow streaming
-  - `random.py` - Date-seeded pick from a public gist of video URLs
-  - `random_live.py` - Date/hour-seeded walk of a secret gist of YouTube channel IDs or `@handle`s, first currently-live wins
-  - `x_video.py` - `X` class. Resolves a public status URL to a `video.twimg.com` mp4
+- **Utility modules** in `util/` (classes are re-exported from `util/__init__.py`):
+  - `sites/youtube.py` - YouTube Data API search and thumbnails. Needs `YOUTUBE_API_KEY`.
+  - `streaming/image_stream.py` - Image and slideshow streaming
+  - `random/videos.py` - Date-seeded pick from a public gist of video URLs
+  - `random/live.py` - Date/hour-seeded walk of a secret gist of YouTube channel IDs or `@handle`s, first currently-live wins
+  - `sites/x_video.py` - `X` class. Resolves a public status URL to a `video.twimg.com` mp4
 - **Static**: `/video/stream`
 
 ### URL processing

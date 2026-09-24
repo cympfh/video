@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from util.youtube import YouTube
+from util.sites.youtube import YouTube
 
 
 class RandomLive:
