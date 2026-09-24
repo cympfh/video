@@ -37,6 +37,12 @@ https://s.cympfh.cc/video?url=https://x.com/pa_draws/status/1849228056537497835
 ```
 Proxies video content for VRChat playback.
 
+**hanimeone**
+```
+https://s.cympfh.cc/video?url=https://hanimeone.me/watch?v=408050
+```
+Relays the watch-page mp4 for VRChat playback. `hanime1.me` and `www` use the same `watch?v=` id.
+
 ### 🖼️ Images
 
 **Single Image:**

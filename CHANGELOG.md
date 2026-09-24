@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- hanimeone / hanime1 watch URLs (`hanimeone.me`, `hanime1.me`, `hanimeone.com`, and the `hanime163.net` / `hanime1.pw` mirrors). `?url=https://hanimeone.me/watch?v=408050` redirects to `/video/hanime/408050`, which streams the mp4. The signed CDN link is not given to the client: without the mirror `Referer` it returns a short decoy playlist.
 - Index page: visiting `/` or `/video` without `url` shows a form that builds `https://s.cympfh.cc/video?url=...` and copies it.
 
 - Query parameter `p` for Bilibili multi-part videos (1-based page index). Forwarded to biliplayer as `&p=N`.

@@ -3,8 +3,8 @@ from pathlib import Path
 from enum import Enum
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 import util
@@ -210,6 +210,9 @@ async def convert(url: str, p: int | None = None) -> str:
     >>> asyncio.run(convert("https://www.iwara.tv/video/rdcIORhbbfaf15"))
     'https://nicovrc.net/?url=https://www.iwara.tv/video/rdcIORhbbfaf15'
 
+    hanimeone / hanime1 は /video/hanime/{id} へ渡し、そこで mp4 を中継する。
+    署名付き CDN は Referer がないと短い囮プレイリストを返すため、直接は返さない。
+
     それ以外はそのまま返す
     >>> asyncio.run(convert("https://www.youtube.com/watch?v=abcd"))
     'https://www.youtube.com/watch?v=abcd'
@@ -231,6 +234,22 @@ async def convert(url: str, p: int | None = None) -> str:
     if "iwara.tv/video/" in url:
         return f"https://nicovrc.net/?url={url}"
 
+    # hanimeone / hanime1: CDN は Referer がないと囮の m3u8 を返す。
+    # 署名付き mp4 をこちらで中継する。
+    hanime = util.Hanime()
+    if hanime.is_watch(url):
+        try:
+            media = await hanime.resolve(url)
+        except (LookupError, httpx.HTTPError, ValueError) as e:
+            logger.warning(f"Failed to resolve hanime video: {url}: {e}")
+            raise HTTPException(
+                status_code=502, detail="Failed to resolve hanime video"
+            )
+        logger.info(
+            f"Hanime {media.video_id} resolved at {media.quality}p via {media.referer}"
+        )
+        return hanime.proxy_path(url)
+
     # X (Twitter): syndication で mp4 を直接返す。nicovrc は使わない。
     x = util.X()
     if x.is_status(url):
@@ -242,6 +261,78 @@ async def convert(url: str, p: int | None = None) -> str:
 
     # それ以外はそのまま返す
     return url
+
+
+@app.api_route("/video/hanime/{video_id}", methods=["GET", "HEAD"])
+async def hanime_media(video_id: str, request: Request):
+    """Stream a resolved hanime mp4. The CDN rejects clients that omit Referer."""
+    if not video_id.isdigit():
+        raise HTTPException(status_code=400, detail="Invalid hanime id")
+
+    hanime = util.Hanime()
+    try:
+        media = hanime.cached(video_id) or await hanime.resolve(
+            f"https://hanimeone.me/watch?v={video_id}"
+        )
+    except (LookupError, httpx.HTTPError, ValueError) as e:
+        logger.warning(f"Failed to resolve hanime video: {video_id}: {e}")
+        raise HTTPException(status_code=502, detail="Failed to resolve hanime video")
+
+    range_header = None if request.method == "HEAD" else request.headers.get("range")
+    headers = hanime.upstream_headers(media, range_header)
+    timeout = httpx.Timeout(20.0, read=120.0)
+    client = httpx.AsyncClient(follow_redirects=True, timeout=timeout)
+    try:
+        upstream = await client.send(
+            client.build_request(request.method, media.media_url, headers=headers),
+            stream=True,
+        )
+    except httpx.HTTPError as e:
+        await client.aclose()
+        hanime.invalidate(video_id)
+        logger.warning(f"Failed to fetch hanime video: {video_id}: {e}")
+        raise HTTPException(status_code=502, detail="Failed to resolve hanime video")
+
+    content_type = upstream.headers.get("content-type", "")
+    if upstream.status_code not in (200, 206) or "mpegurl" in content_type:
+        await upstream.aclose()
+        await client.aclose()
+        hanime.invalidate(video_id)
+        logger.warning(
+            f"Hanime upstream rejected: {video_id}: "
+            f"{upstream.status_code} {content_type}"
+        )
+        raise HTTPException(status_code=502, detail="Failed to resolve hanime video")
+
+    out_headers: dict[str, str] = {"content-type": "video/mp4"}
+    for key in (
+        "content-length",
+        "content-range",
+        "accept-ranges",
+        "etag",
+        "last-modified",
+    ):
+        value = upstream.headers.get(key)
+        if value:
+            out_headers[key] = value
+    out_headers.setdefault("accept-ranges", "bytes")
+
+    if request.method == "HEAD":
+        await upstream.aclose()
+        await client.aclose()
+        return Response(status_code=upstream.status_code, headers=out_headers)
+
+    async def body():
+        try:
+            async for chunk in upstream.aiter_bytes(64 * 1024):
+                yield chunk
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+
+    return StreamingResponse(
+        body(), status_code=upstream.status_code, headers=out_headers
+    )
 
 
 # ImageStream

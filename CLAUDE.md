@@ -17,6 +17,7 @@ Public examples use `https://s.cympfh.cc/video?url=...` (https, not http).
   - `random.py` - Date-seeded pick from a public gist of video URLs
   - `random_live.py` - Date/hour-seeded walk of a secret gist of YouTube channel IDs or `@handle`s, first currently-live wins
   - `x_video.py` - `X` class. Resolves a public status URL to a `video.twimg.com` mp4
+  - `hanime.py` - `Hanime` class. Resolves a hanimeone / hanime1 watch URL and the `/video/hanime/{id}` route streams the mp4
 - **Static**: `/video/stream`
 
 ### URL processing
@@ -27,6 +28,7 @@ Public examples use `https://s.cympfh.cc/video?url=...` (https, not http).
 - **Bilibili**: wrap with `https://biliplayer.91vrchat.com/player/?url=`. Optional query `p` (1-based) is appended as `&p=N`. Do not put `p` inside the raw video URL; the top-level query parser strips it.
 - **iwara** (`iwara.tv/video/`): `https://nicovrc.net/?url={url}`.
 - **X / Twitter** (`x.com` or `twitter.com` `/status/{id}`): `util.X.resolve_mp4()`. No nicovrc.
+- **hanimeone / hanime1** (`hanimeone.me`, `hanime1.me`, `hanimeone.com`, and the `hanime163.net` / `hanime1.pw` mirrors, `/watch?v={id}`): redirect to `/video/hanime/{id}`, which streams the highest-quality mp4. The signed CDN URL is not returned to the client.
 - **random**: gist list, shuffle seeded by UTC `YYYY/MM/DD`, index `hour % len`. Same day and hour returns the same video.
 - **random-live**: same time seed, then walk the list until a channel is live. `?url=random-live` must be matched before the `random` prefix. Gist: secret `https://gist.github.com/cympfh/e8ee500adacbc1bbfc717ca7cbb2a9b4` (`random-live-users`, one `@handle` or channel ID per line). 404 if nobody is live.
 - **Images**: single image, or 2+ `url=` values as a slideshow (`interval`, `loop`).
@@ -41,6 +43,7 @@ These were checked 2026-09-08 against the README samples.
 - **NicoNico is indirectly nicovrc.** We only rewrite to `nicovideo.life`. That host 302s to `https://nicovrc.net/?url={original}?site=nicovideo.life_video`, and `https://www.nicovideo.life/` itself 302s to `https://nicovrc.net`. For the README sample that nicovrc URL returned `200` `application/vnd.apple.mpegurl` immediately. That is a different path from the hanging `/video/` player used by the old X proxy.
 - **iwara** calls `nicovrc.net/?url=` directly (the current nicovrc form; old `/proxy/?` still works but is the path they asked callers to leave). If nicovrc is down, iwara breaks. X no longer does.
 - **Bilibili** depends on `biliplayer.91vrchat.com`, not nicovrc. README sample BV was replaced with `BV16P4y1M7AR` after the previous sample disappeared (PR #8).
+- **hanimeone** (checked 2026-09-24, sample `https://hanimeone.me/watch?v=408050`). `hanimeone.me` and `hanime1.me` answer this host with a Cloudflare challenge, so resolve goes through mirrors that share the same `watch?v=` id (`www.hanime163.net`, `hanime1.pw`). The watch page has `<source src="…/jmpres/…-{1080,720,480}p.mp4?secure=…">`. That URL 302s to a rotating CDN host. Without a `Referer` from the mirror, the CDN returns `200` `application/vnd.apple.mpegurl` whose only segment is `https://player.centercdn.top/tip.ts` (a few seconds, not the video). With `Referer: https://www.hanime163.net/` the same URL is `video/mp4` (~42MB for the sample at 1080p, `accept-ranges: bytes`). VRChat does not send that Referer, so `/video/hanime/{id}` fetches with it and streams the mp4. The `secure=` timestamp is short-lived (sample token expired the same UTC day); it is cached until a minute before expiry.
 
 ## Recent changes
 
@@ -49,6 +52,7 @@ These were checked 2026-09-08 against the README samples.
 - PR #8: Bilibili sample URL `BV16P4y1M7AR`.
 - PR #11 / `60d7def`: X status URLs resolve to twimg mp4 via syndication. Deployed on s.cympfh.cc. Confirmed `307` to `video.twimg.com`, no nicovrc hop.
 - Closed PR #9: an earlier attempt that still used nicovrc `/proxy/` only to peel the Location mp4. Dropped because it still depended on nicovrc.
+- hanimeone / hanime1 watch URLs stream via `/video/hanime/{id}` because the CDN serves a decoy playlist unless the mirror Referer is set.
 
 ## Development
 
