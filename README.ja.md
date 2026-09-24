@@ -35,12 +35,6 @@ https://s.cympfh.cc/video?url=https://x.com/pa_draws/status/1849228056537497835
 ```
 VRChat再生のために動画コンテンツをプロキシします。
 
-**hanimeone**
-```
-https://s.cympfh.cc/video?url=https://hanimeone.me/watch?v=408050
-```
-視聴ページの mp4 を VRChat 向けに中継します。`hanime1.me` と `www` も同じ `watch?v=` の id です。
-
 ### 🖼️ 画像
 
 **単一画像:**

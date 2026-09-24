@@ -112,7 +112,7 @@
         </svg>
       </button>
     </div>
-    <p class="support">Supporting<br><strong id="fill-youtube">YouTube</strong> / <strong id="fill-niconico">niconico</strong> / <strong id="fill-bilibili">bilibili</strong> / <strong id="fill-x">X</strong> / <strong id="fill-iwara">iwara</strong> / <strong id="fill-hanimeone">hanimeone</strong></p>
+    <p class="support">Supporting<br><strong id="fill-youtube">YouTube</strong> / <strong id="fill-niconico">niconico</strong> / <strong id="fill-bilibili">bilibili</strong> / <strong id="fill-x">X</strong> / <strong id="fill-iwara">iwara</strong></p>
   </main>
   <script>
     const input = document.getElementById("url");
@@ -169,10 +169,6 @@
     });
     document.getElementById("fill-iwara").addEventListener("click", () => {
       input.value = "https://www.iwara.tv/video/SLKmO41sKBLOHr";
-      render();
-    });
-    document.getElementById("fill-hanimeone").addEventListener("click", () => {
-      input.value = "https://hanimeone.me/watch?v=408050";
       render();
     });
     document.getElementById("form").addEventListener("submit", (event) => {

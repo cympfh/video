@@ -210,9 +210,6 @@ async def convert(url: str, p: int | None = None) -> str:
     >>> asyncio.run(convert("https://www.iwara.tv/video/rdcIORhbbfaf15"))
     'https://nicovrc.net/?url=https://www.iwara.tv/video/rdcIORhbbfaf15'
 
-    hanimeone / hanime1 は /video/hanime/{id} へ渡し、そこで mp4 を中継する。
-    署名付き CDN は Referer がないと短い囮プレイリストを返すため、直接は返さない。
-
     それ以外はそのまま返す
     >>> asyncio.run(convert("https://www.youtube.com/watch?v=abcd"))
     'https://www.youtube.com/watch?v=abcd'
@@ -263,9 +260,12 @@ async def convert(url: str, p: int | None = None) -> str:
     return url
 
 
-@app.api_route("/video/hanime/{video_id}", methods=["GET", "HEAD"])
+@app.api_route(
+    "/video/hanime/{video_id}",
+    methods=["GET", "HEAD"],
+    include_in_schema=False,
+)
 async def hanime_media(video_id: str, request: Request):
-    """Stream a resolved hanime mp4. The CDN rejects clients that omit Referer."""
     if not video_id.isdigit():
         raise HTTPException(status_code=400, detail="Invalid hanime id")
 
