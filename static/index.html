@@ -35,6 +35,11 @@
       border: 1px solid #ccc;
       border-radius: 8px;
     }
+    #url.dragover {
+      border-color: #339af0;
+      background: #e7f5ff;
+      box-shadow: 0 0 0 3px rgba(51, 154, 240, 0.35);
+    }
     button.clear {
       position: absolute;
       right: 8px;
@@ -87,12 +92,18 @@
       font-size: 0.85rem;
     }
     .support strong { cursor: pointer; }
+    .error {
+      margin: 0.7rem 0 0 0.15rem;
+      color: #e03131;
+      font-size: 0.9rem;
+    }
+    .error[hidden] { display: none; }
   </style>
 </head>
 <body>
   <main>
     <form id="form" autocomplete="off">
-      <label class="hint" for="url">Enter a Video URL</label>
+      <label class="hint" for="url">Enter a Video URL or drop an image</label>
       <div class="field">
         <input id="url" type="text" name="url" placeholder="https://" required autofocus>
         <button id="clear" class="clear" type="button" hidden aria-label="クリア">
@@ -103,6 +114,7 @@
         </button>
       </div>
     </form>
+    <p id="error" class="error" hidden role="alert"></p>
     <div class="result">
       <div id="converted" class="converted"></div>
       <button id="copy" class="copy" type="button" hidden aria-label="コピー">
@@ -119,6 +131,18 @@
     const converted = document.getElementById("converted");
     const copy = document.getElementById("copy");
     const clear = document.getElementById("clear");
+    const error = document.getElementById("error");
+    let uploading = false;
+
+    function clearError() {
+      error.hidden = true;
+      error.textContent = "";
+    }
+
+    function showError(message) {
+      error.hidden = false;
+      error.textContent = message;
+    }
 
     function sourceUrl() {
       const value = input.value.trim();
@@ -139,6 +163,7 @@
     }
 
     function render() {
+      clearError();
       const href = built();
       converted.textContent = href;
       copy.hidden = !href;
@@ -188,6 +213,68 @@
     }
     copy.addEventListener("click", copyBuilt);
     converted.addEventListener("click", copyBuilt);
+
+    function rejectedFile(file) {
+      if (!file) return true;
+      if (!file.type || file.type === "application/octet-stream") return false;
+      return !file.type.startsWith("image/");
+    }
+
+    function errorDetail(data) {
+      if (data && typeof data.detail === "string") return data.detail;
+      return "Upload failed.";
+    }
+
+    async function uploadImage(file) {
+      if (uploading) return;
+      clearError();
+      if (rejectedFile(file)) {
+        showError("Drop an image file.");
+        return;
+      }
+      uploading = true;
+      converted.textContent = "Uploading…";
+      copy.hidden = true;
+      const body = new FormData();
+      body.append("file", file, file.name || "image");
+      try {
+        const response = await fetch("/video/upload", { method: "POST", body });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.path || !data.path.startsWith("/video/uploads/")) {
+          render();
+          showError(errorDetail(data));
+          return;
+        }
+        input.value = location.origin + data.path;
+        clearError();
+        render();
+      } catch {
+        render();
+        showError("Upload failed.");
+      } finally {
+        uploading = false;
+        input.classList.remove("dragover");
+      }
+    }
+
+    input.addEventListener("dragenter", (event) => {
+      event.preventDefault();
+      input.classList.add("dragover");
+    });
+    input.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+      input.classList.add("dragover");
+    });
+    input.addEventListener("dragleave", () => {
+      if (!uploading) input.classList.remove("dragover");
+    });
+    input.addEventListener("drop", (event) => {
+      event.preventDefault();
+      if (!uploading) input.classList.remove("dragover");
+      const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
+      uploadImage(file);
+    });
   </script>
 </body>
 </html>
