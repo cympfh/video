@@ -5,8 +5,10 @@ A new upload keeps a file only when both are true: it is among the newest
 Everything else is deleted, including metadata, so old URLs stop resolving.
 """
 
+import io
 import json
 import logging
+import math
 import os
 import re
 import secrets
@@ -16,11 +18,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
+from PIL import Image, ImageOps, ImageSequence, UnidentifiedImageError
+
 logger = logging.getLogger("uvicorn")
 
 KEEP_NEWEST = 10
 MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_WIDTH = 1920
+MAX_HEIGHT = 1080
 META_NAME = "index.json"
 PRESERVE_NAMES = {META_NAME, ".gitkeep"}
 NAME_RE_SOURCE = r"[0-9a-f]{32}\.(?:jpg|png|gif|webp)"
@@ -118,6 +124,157 @@ def detect_image(data: bytes, content_type: str | None) -> str | None:
     if _DECLARED_KIND.get(declared) != kind:
         return None
     return kind
+
+
+def fit_within(
+    width: int,
+    height: int,
+    *,
+    max_width: int = MAX_WIDTH,
+    max_height: int = MAX_HEIGHT,
+) -> tuple[int, int]:
+    """Scale a size so it fits inside ``max_width`` x ``max_height``.
+
+    Aspect ratio is preserved. Sizes that already fit are unchanged. Rounding
+    matches the browser (half up) and the result never exceeds the box.
+
+    Examples
+    --------
+    >>> fit_within(3840, 2160)
+    (1920, 1080)
+    >>> fit_within(4000, 1000)
+    (1920, 480)
+    >>> fit_within(1000, 4000)
+    (270, 1080)
+    >>> fit_within(3000, 2000)
+    (1620, 1080)
+    >>> fit_within(800, 600)
+    (800, 600)
+    >>> fit_within(1920, 1080)
+    (1920, 1080)
+    >>> fit_within(1920, 1081)
+    (1918, 1080)
+    >>> fit_within(1, 10000)
+    (1, 1080)
+    """
+    if width < 1 or height < 1:
+        raise ValueError("Image dimensions must be positive")
+    if width <= max_width and height <= max_height:
+        return width, height
+    scale = min(max_width / width, max_height / height)
+    fitted_width = min(max_width, max(1, math.floor(width * scale + 0.5)))
+    fitted_height = min(max_height, max(1, math.floor(height * scale + 0.5)))
+    return fitted_width, fitted_height
+
+
+def downscale_image(data: bytes, kind: str) -> bytes:
+    """Return image bytes that fit inside 1920x1080.
+
+    Pixels are oriented from EXIF first. Bytes that already fit, and do not
+    need that rotation, are returned unchanged. Anything larger is resized
+    with the same fit the browser uses.
+
+    Examples
+    --------
+    >>> import io
+    >>> from PIL import Image
+    >>> small = io.BytesIO()
+    >>> Image.new("RGB", (800, 600), (1, 2, 3)).save(small, format="PNG")
+    >>> payload = small.getvalue()
+    >>> downscale_image(payload, "png") == payload
+    True
+    >>> big = io.BytesIO()
+    >>> Image.new("RGB", (3840, 2160), (9, 9, 9)).save(big, format="PNG")
+    >>> fitted = Image.open(io.BytesIO(downscale_image(big.getvalue(), "png")))
+    >>> fitted.size
+    (1920, 1080)
+    >>> wide = io.BytesIO()
+    >>> Image.new("RGB", (4000, 1000), (4, 4, 4)).save(wide, format="PNG")
+    >>> Image.open(io.BytesIO(downscale_image(wide.getvalue(), "png"))).size
+    (1920, 480)
+    """
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            orientation = image.getexif().get(274) or 1
+            if orientation not in (0, 1):
+                image = ImageOps.exif_transpose(image)
+            target = fit_within(image.width, image.height)
+            if target == (image.width, image.height) and orientation in (0, 1):
+                return data
+            encoded = _encode_fitted(image, target, kind)
+    except (UnidentifiedImageError, Image.DecompressionBombError, OSError) as exc:
+        raise ValueError("Could not read image") from exc
+    _ensure_fits(encoded)
+    return encoded
+
+
+def _encode_fitted(image: Image.Image, target: tuple[int, int], kind: str) -> bytes:
+    frames = getattr(image, "n_frames", 1) or 1
+    if frames > 1 and kind in {"gif", "webp"}:
+        try:
+            return _encode_animation(image, target, kind)
+        except OSError:
+            logger.warning("Animated downscale failed; storing the first frame")
+    return _encode_still(image, target, kind)
+
+
+def _encode_still(image: Image.Image, target: tuple[int, int], kind: str) -> bytes:
+    working = image
+    if working.size != target:
+        working = working.resize(target, Image.Resampling.LANCZOS)
+    buffer = io.BytesIO()
+    if kind == "jpeg":
+        if working.mode != "RGB":
+            working = working.convert("RGB")
+        working.save(buffer, format="JPEG", quality=90, optimize=True)
+    elif kind == "png":
+        if working.mode not in ("RGB", "RGBA", "L", "LA"):
+            bands = working.getbands()
+            working = working.convert("RGBA" if "A" in bands else "RGB")
+        working.save(buffer, format="PNG", optimize=True)
+    elif kind == "gif":
+        working = working.convert("P", palette=Image.Palette.ADAPTIVE)
+        working.save(buffer, format="GIF")
+    elif kind == "webp":
+        if working.mode not in ("RGB", "RGBA"):
+            bands = working.getbands()
+            working = working.convert("RGBA" if "A" in bands else "RGB")
+        working.save(buffer, format="WEBP", quality=90)
+    else:
+        raise ValueError(f"Unsupported image kind: {kind}")
+    return buffer.getvalue()
+
+
+def _encode_animation(image: Image.Image, target: tuple[int, int], kind: str) -> bytes:
+    frames: list[Image.Image] = []
+    durations: list[int] = []
+    for frame in ImageSequence.Iterator(image):
+        frame = frame.copy()
+        if frame.size != target:
+            frame = frame.resize(target, Image.Resampling.LANCZOS)
+        frames.append(frame)
+        durations.append(int(frame.info.get("duration", image.info.get("duration", 100))))
+    if not frames:
+        raise ValueError("Image has no frames")
+    buffer = io.BytesIO()
+    save_kwargs = {
+        "save_all": True,
+        "append_images": frames[1:],
+        "duration": durations,
+        "loop": image.info.get("loop", 0),
+    }
+    if kind == "gif":
+        frames[0].save(buffer, format="GIF", **save_kwargs)
+    else:
+        frames[0].save(buffer, format="WEBP", quality=90, **save_kwargs)
+    return buffer.getvalue()
+
+
+def _ensure_fits(data: bytes) -> None:
+    with Image.open(io.BytesIO(data)) as image:
+        width, height = image.size
+    if width < 1 or height < 1 or width > MAX_WIDTH or height > MAX_HEIGHT:
+        raise ValueError(f"Image is {width}x{height} after downscale")
 
 
 def content_type_for(name: str) -> str:

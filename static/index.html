@@ -225,6 +225,56 @@
       return "Upload failed.";
     }
 
+    const MAX_WIDTH = 1920;
+    const MAX_HEIGHT = 1080;
+
+    function roundHalfUp(value) {
+      return Math.floor(value + 0.5);
+    }
+
+    function fittedSize(width, height) {
+      if (width <= MAX_WIDTH && height <= MAX_HEIGHT) {
+        return { width: width, height: height };
+      }
+      const scale = Math.min(MAX_WIDTH / width, MAX_HEIGHT / height);
+      return {
+        width: Math.max(1, Math.min(MAX_WIDTH, roundHalfUp(width * scale))),
+        height: Math.max(1, Math.min(MAX_HEIGHT, roundHalfUp(height * scale))),
+      };
+    }
+
+    function blobType(type) {
+      if (type === "image/jpeg" || type === "image/webp") return type;
+      return "image/png";
+    }
+
+    async function prepareUpload(file) {
+      let bitmap;
+      try {
+        bitmap = await createImageBitmap(file);
+      } catch (e) {
+        return file;
+      }
+      try {
+        if (!bitmap.width || !bitmap.height) return file;
+        const size = fittedSize(bitmap.width, bitmap.height);
+        if (size.width === bitmap.width && size.height === bitmap.height) return file;
+        const canvas = document.createElement("canvas");
+        canvas.width = size.width;
+        canvas.height = size.height;
+        const context = canvas.getContext("2d");
+        context.drawImage(bitmap, 0, 0, size.width, size.height);
+        const type = blobType(file.type);
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, type, 0.92));
+        if (!blob) return file;
+        const ext = type === "image/jpeg" ? ".jpg" : type === "image/webp" ? ".webp" : ".png";
+        const base = (file.name || "image").replace(/\.[^.]+$/, "");
+        return new File([blob], base + ext, { type: blob.type || type });
+      } finally {
+        bitmap.close();
+      }
+    }
+
     async function uploadImage(file) {
       if (uploading) return;
       clearError();
@@ -235,8 +285,14 @@
       uploading = true;
       converted.textContent = "Uploading…";
       copy.hidden = true;
+      let prepared = file;
+      try {
+        prepared = await prepareUpload(file);
+      } catch (e) {
+        prepared = file;
+      }
       const body = new FormData();
-      body.append("file", file, file.name || "image");
+      body.append("file", prepared, prepared.name || "image");
       try {
         const response = await fetch("/video/upload", { method: "POST", body });
         const data = await response.json().catch(() => ({}));

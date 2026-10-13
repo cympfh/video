@@ -13,6 +13,7 @@ from util.streaming.uploads import (
     content_type_for,
     default_upload_dir,
     detect_image,
+    downscale_image,
     public_stream_url,
     resolve_stored_upload,
     MAX_UPLOAD_BYTES,
@@ -403,6 +404,11 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
     data = await _read_upload(file)
     kind = detect_image(data, file.content_type)
     if kind is None:
+        raise HTTPException(status_code=400, detail="Only image files are accepted")
+    try:
+        data = downscale_image(data, kind)
+    except (OSError, ValueError) as exc:
+        logger.warning(f"Failed to downscale upload: {exc}")
         raise HTTPException(status_code=400, detail="Only image files are accepted")
     record = upload_store.add(data, kind)
     base = str(request.base_url).rstrip("/")
