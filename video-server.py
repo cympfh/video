@@ -3,14 +3,28 @@ from pathlib import Path
 from enum import Enum
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
+from starlette.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 import util
+from util.streaming.uploads import (
+    UploadStore,
+    content_type_for,
+    default_upload_dir,
+    ImageTooLarge,
+    detect_image,
+    downscale_image,
+    public_stream_url,
+    resolve_stored_upload,
+    MAX_UPLOAD_BYTES,
+)
 
 logger = logging.getLogger("uvicorn")
 istream = util.ImageStream()
+upload_store = UploadStore(default_upload_dir())
+upload_store.ensure()
 app = FastAPI(title="video")
 
 
@@ -82,8 +96,28 @@ async def favicon_png():
     return FileResponse(FAVICON_PNG)
 
 
+def _trusted_upload_hosts(request: Request) -> set[str]:
+    hosts = {"s.cympfh.cc", "localhost", "127.0.0.1"}
+    if request.url.hostname:
+        hosts.add(request.url.hostname.lower())
+    return hosts
+
+
+def _local_upload(url: str, request: Request) -> Path | None:
+    """Local file for a trusted upload URL, or None when ``url`` is not one."""
+    try:
+        return resolve_stored_upload(
+            url,
+            upload_store.directory,
+            trusted_hosts=_trusted_upload_hosts(request),
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Uploaded image not found")
+
+
 @app.get("/")
 async def root(
+    request: Request,
     url: list[str] | None = Query(None),
     interval: int = Query(8, ge=1, le=30),
     loop: int = Query(100, ge=1),
@@ -111,7 +145,17 @@ async def root(
         logger.info(
             f"Slideshow mode: {len(url)} images, duration={interval}s, loop={loop}"
         )
-        return await istream.get_slideshow(urls=url, duration=interval, loop_count=loop)
+        local_paths = {}
+        for item in url:
+            local = _local_upload(item, request)
+            if local is not None:
+                local_paths[item] = str(local)
+        return await istream.get_slideshow(
+            urls=url,
+            duration=interval,
+            loop_count=loop,
+            local_paths=local_paths or None,
+        )
 
     # 単一URL（既存の動作）
     url: str = url[0]
@@ -140,6 +184,10 @@ async def root(
             return RedirectResponse(converted_url)
 
         case UrlType.Image:
+            local = _local_upload(url, request)
+            if local is not None:
+                logger.info(f"Streaming an uploaded image: {local.name}")
+                return await istream.get(path=str(local))
             logger.info(f"Streaming an image: {url}")
             return await istream.get(url=url)
 
@@ -169,6 +217,7 @@ async def root(
 
 @app.get("/video")
 async def video(
+    request: Request,
     url: list[str] | None = Query(None),
     interval: int = Query(8, ge=1, le=30),
     loop: int = Query(100, ge=1),
@@ -176,7 +225,7 @@ async def video(
 ):
     if not url:
         return index_page()
-    return await root(url, interval, loop, p)
+    return await root(request, url, interval, loop, p)
 
 
 async def convert(url: str, p: int | None = None) -> str:
@@ -332,6 +381,64 @@ async def hanime_media(video_id: str, request: Request):
 
     return StreamingResponse(
         body(), status_code=upstream.status_code, headers=out_headers
+    )
+
+
+def _accept_upload(data: bytes, kind: str):
+    """Decode, downscale, and store. Runs off the event loop."""
+    fitted = downscale_image(data, kind)
+    record = upload_store.add(fitted, kind)
+    logger.info(f"Stored upload {record.name} ({len(fitted)} bytes)")
+    return record
+
+
+async def _read_upload(upload: UploadFile) -> bytes:
+    buffer = bytearray()
+    while True:
+        chunk = await upload.read(1024 * 1024)
+        if not chunk:
+            break
+        if len(buffer) + len(chunk) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="Image exceeds 20MB")
+        buffer.extend(chunk)
+    return bytes(buffer)
+
+
+@app.post("/video/upload")
+async def upload_image(request: Request, file: UploadFile = File(...)):
+    """Save an image and return a URL that ImageStream can play.
+
+    ``url`` is a ``/video?url=...`` link, the same kind of URL the form builds
+    for a remote image. ``path`` is the stored file, used to fill that form.
+    """
+    data = await _read_upload(file)
+    kind = detect_image(data, file.content_type)
+    if kind is None:
+        raise HTTPException(status_code=400, detail="Only image files are accepted")
+    try:
+        record = await run_in_threadpool(_accept_upload, data, kind)
+    except ImageTooLarge as exc:
+        logger.warning(f"Rejected oversized upload: {exc}")
+        raise HTTPException(status_code=400, detail="Image is too large")
+    except (OSError, ValueError) as exc:
+        logger.warning(f"Failed to downscale upload: {exc}")
+        raise HTTPException(status_code=400, detail="Only image files are accepted")
+    base = str(request.base_url).rstrip("/")
+    return {
+        "url": public_stream_url(base, record.name),
+        "path": f"/video/uploads/{record.name}",
+    }
+
+
+@app.get("/video/uploads/{name}")
+async def uploaded_image(name: str):
+    path = upload_store.get(name)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Uploaded image not found")
+    return FileResponse(
+        path,
+        media_type=content_type_for(name),
+        headers={"x-content-type-options": "nosniff"},
     )
 
 

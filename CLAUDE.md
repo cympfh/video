@@ -14,10 +14,11 @@ Public examples use `https://s.cympfh.cc/video?url=...` (https, not http).
 - **Utility modules** in `util/` (classes are re-exported from `util/__init__.py`):
   - `sites/youtube.py` - YouTube Data API search and thumbnails. Needs `YOUTUBE_API_KEY`.
   - `streaming/image_stream.py` - Image and slideshow streaming
+  - `streaming/uploads.py` - Saved image uploads and retention (newest 10, and uploaded within 7 days)
   - `random/videos.py` - Date-seeded pick from a public gist of video URLs
   - `random/live.py` - Date/hour-seeded walk of a secret gist of YouTube channel IDs or `@handle`s, first currently-live wins
   - `sites/x_video.py` - `X` class. Resolves a public status URL to a `video.twimg.com` mp4
-- **Static**: `/video/stream`
+- **Static**: `/video/stream` (HLS), `/video/uploads/{name}` (stored upload bytes)
 
 ### URL processing
 
@@ -30,6 +31,7 @@ Public examples use `https://s.cympfh.cc/video?url=...` (https, not http).
 - **random**: gist list, shuffle seeded by UTC `YYYY/MM/DD`, index `hour % len`. Same day and hour returns the same video.
 - **random-live**: same time seed, then walk the list until a channel is live. `?url=random-live` must be matched before the `random` prefix. Gist: secret `https://gist.github.com/cympfh/e8ee500adacbc1bbfc717ca7cbb2a9b4` (`random-live-users`, one `@handle` or channel ID per line). 404 if nobody is live.
 - **Images**: single image, or 2+ `url=` values as a slideshow (`interval`, `loop`).
+- **Uploaded images**: `POST /video/upload` (multipart field `file`) saves a real image under `uploads/` (`UPLOAD_DIR`) and returns `url` (`/video?url=...`, same shape as a remote image) plus `path` (`/video/uploads/{name}`). Names are random. Pillow work and the disk write run in a threadpool so a large upload does not block other requests. Caps: 20MB, 50 million pixels per frame, 200 frames, and 1 billion pixels across frames. Images larger than 1920×1080 are scaled down to fit that box, keeping aspect ratio: the browser does it before upload, and the server does it again so a direct API upload is stored within Full HD too. Stored files are re-encoded without EXIF/metadata; animations that pass the frame cap keep their frames. Each new upload keeps only generated files that are among the newest 10 and were uploaded within 7 days, then deletes those files and their `index.json` entries so old URLs 404. Other files in the directory are not removed. Trusted upload URLs are streamed from disk via ImageStream; they are not fetched back over HTTP. The form at `/video` accepts a drop on the existing URL box and fills that same convert/copy flow. There is no auth or rate limit on the upload route. Files live on the container filesystem: the Dockerfile has no `VOLUME`, and `make run` is `docker run --rm` without `-v`, so uploads disappear when the container is recreated. That is acceptable because this storage is temporary.
 - **YouTube search**: `y!{keyword}` image grid, `y!{keyword}!{index}` direct watch URL.
 
 ## External dependencies (what actually breaks playback)
@@ -66,6 +68,12 @@ Docker: `make build` then `make run` (needs `YOUTUBE_API_KEY`).
 ## Testing
 
 `convert()` docstring examples use `asyncio.run(convert(...))` because `convert` is async. They do not cover X resolution (that hits the network).
+
+Upload retention lives in `util/streaming/uploads.py`:
+
+```bash
+uv run python -m doctest util/streaming/uploads.py
+```
 
 Local check that matched production for X:
 

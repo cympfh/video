@@ -307,6 +307,7 @@ class ImageStream:
         urls: list[str],
         duration: int,
         loop_count: int,
+        local_paths: dict[str, str] | None = None,
     ) -> RedirectResponse:
         """複数画像からスライドショーストリームを生成
 
@@ -318,6 +319,9 @@ class ImageStream:
             各画像の表示秒数
         loop_count : int
             スライドショーのループ回数
+        local_paths : dict[str, str] | None
+            アップロード済み画像の URL からローカルパスへの対応。
+            指定された URL は HTTP で取りに行かない。
         """
         if len(urls) < 2:
             raise ValueError("Slideshow requires at least 2 images")
@@ -347,6 +351,13 @@ class ImageStream:
             ) as client:
                 for idx, url in enumerate(urls):
                     image_path = str(Path(temp_dir) / f"image_{idx:03d}.jpg")
+                    if local_paths and url in local_paths:
+                        shutil.copyfile(local_paths[url], image_path)
+                        image_paths.append(image_path)
+                        logger.info(
+                            f"Using uploaded image {idx + 1}/{len(urls)}: {url}"
+                        )
+                        continue
                     try:
                         response = await client.get(url, timeout=5.0)
                         response.raise_for_status()
