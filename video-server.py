@@ -4,6 +4,7 @@ from enum import Enum
 
 import httpx
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
+from starlette.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -12,6 +13,7 @@ from util.streaming.uploads import (
     UploadStore,
     content_type_for,
     default_upload_dir,
+    ImageTooLarge,
     detect_image,
     downscale_image,
     public_stream_url,
@@ -382,6 +384,14 @@ async def hanime_media(video_id: str, request: Request):
     )
 
 
+def _accept_upload(data: bytes, kind: str):
+    """Decode, downscale, and store. Runs off the event loop."""
+    fitted = downscale_image(data, kind)
+    record = upload_store.add(fitted, kind)
+    logger.info(f"Stored upload {record.name} ({len(fitted)} bytes)")
+    return record
+
+
 async def _read_upload(upload: UploadFile) -> bytes:
     buffer = bytearray()
     while True:
@@ -406,13 +416,14 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
     if kind is None:
         raise HTTPException(status_code=400, detail="Only image files are accepted")
     try:
-        data = downscale_image(data, kind)
+        record = await run_in_threadpool(_accept_upload, data, kind)
+    except ImageTooLarge as exc:
+        logger.warning(f"Rejected oversized upload: {exc}")
+        raise HTTPException(status_code=400, detail="Image is too large")
     except (OSError, ValueError) as exc:
         logger.warning(f"Failed to downscale upload: {exc}")
         raise HTTPException(status_code=400, detail="Only image files are accepted")
-    record = upload_store.add(data, kind)
     base = str(request.base_url).rstrip("/")
-    logger.info(f"Stored upload {record.name} ({len(data)} bytes)")
     return {
         "url": public_stream_url(base, record.name),
         "path": f"/video/uploads/{record.name}",

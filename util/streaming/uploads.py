@@ -2,7 +2,8 @@
 
 A new upload keeps a file only when both are true: it is among the newest
 ``KEEP_NEWEST`` uploads, and it was uploaded within ``MAX_AGE_SECONDS``.
-Everything else is deleted, including metadata, so old URLs stop resolving.
+Other generated upload files are deleted, including their metadata, so old
+URLs stop resolving. Unrelated files in the directory are left alone.
 """
 
 import io
@@ -12,8 +13,11 @@ import math
 import os
 import re
 import secrets
+import struct
 import threading
 import time
+import warnings
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote, urlparse
@@ -27,9 +31,17 @@ MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_WIDTH = 1920
 MAX_HEIGHT = 1080
+# Per-frame pixel cap. Pillow raises DecompressionBombError above twice this.
+MAX_INPUT_PIXELS = 50_000_000
+MAX_FRAMES = 200
+# 100 frames of 4000x2250 is 900MP and still allowed; larger jobs are rejected.
+MAX_TOTAL_PIXELS = 1_000_000_000
 META_NAME = "index.json"
 PRESERVE_NAMES = {META_NAME, ".gitkeep"}
 NAME_RE_SOURCE = r"[0-9a-f]{32}\.(?:jpg|png|gif|webp)"
+
+Image.MAX_IMAGE_PIXELS = MAX_INPUT_PIXELS
+warnings.filterwarnings("ignore", category=Image.DecompressionBombWarning)
 
 _KIND_EXT = {"jpeg": ".jpg", "png": ".png", "gif": ".gif", "webp": ".webp"}
 _DECLARED_KIND = {
@@ -46,6 +58,10 @@ _MEDIA_TYPES = {
     ".gif": "image/gif",
     ".webp": "image/webp",
 }
+
+
+class ImageTooLarge(ValueError):
+    """The image has too many pixels or too many frames to store."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +89,12 @@ def sniff_image(data: bytes) -> str | None:
     'webp'
     >>> sniff_image(b"GIF87a")
     'gif'
+    >>> sniff_image(b"\\xff\\xd8\\xff")
+    'jpeg'
+    >>> sniff_image(b"\\xff\\xd8\\x00") is None
+    True
+    >>> sniff_image(b"\\xff\\xd8") is None
+    True
     >>> sniff_image(b"not an image") is None
     True
     >>> sniff_image(b"") is None
@@ -156,6 +178,10 @@ def fit_within(
     (1918, 1080)
     >>> fit_within(1, 10000)
     (1, 1080)
+    >>> fit_within(3840, 2001)
+    (1920, 1001)
+    >>> fit_within(4000, 2160)
+    (1920, 1037)
     """
     if width < 1 or height < 1:
         raise ValueError("Image dimensions must be positive")
@@ -168,20 +194,25 @@ def fit_within(
 
 
 def downscale_image(data: bytes, kind: str) -> bytes:
-    """Return image bytes that fit inside 1920x1080.
+    """Return image bytes that fit inside 1920x1080, without source metadata.
 
-    Pixels are oriented from EXIF first. Bytes that already fit, and do not
-    need that rotation, are returned unchanged. Anything larger is resized
-    with the same fit the browser uses.
+    EXIF orientation is applied, then the image is re-encoded so GPS and other
+    metadata are not stored. Animations that pass the frame cap keep their
+    frames. Anything larger than Full HD is resized with the same fit the
+    browser uses.
 
     Examples
     --------
     >>> import io
     >>> from PIL import Image
-    >>> small = io.BytesIO()
-    >>> Image.new("RGB", (800, 600), (1, 2, 3)).save(small, format="PNG")
-    >>> payload = small.getvalue()
-    >>> downscale_image(payload, "png") == payload
+    >>> from PIL.ExifTags import IFD
+    >>> photo = Image.new("RGB", (800, 600), (1, 2, 3))
+    >>> exif = Image.Exif()
+    >>> exif.get_ifd(IFD.GPSInfo)[2] = (35.0, 41.0, 0.0)
+    >>> original = io.BytesIO()
+    >>> photo.save(original, format="JPEG", exif=exif, quality=90)
+    >>> stored = Image.open(io.BytesIO(downscale_image(original.getvalue(), "jpeg")))
+    >>> stored.size == (800, 600) and not stored.getexif().get_ifd(IFD.GPSInfo)
     True
     >>> big = io.BytesIO()
     >>> Image.new("RGB", (3840, 2160), (9, 9, 9)).save(big, format="PNG")
@@ -192,20 +223,85 @@ def downscale_image(data: bytes, kind: str) -> bytes:
     >>> Image.new("RGB", (4000, 1000), (4, 4, 4)).save(wide, format="PNG")
     >>> Image.open(io.BytesIO(downscale_image(wide.getvalue(), "png"))).size
     (1920, 480)
+    >>> frame_a = Image.new("RGB", (16, 16), (255, 0, 0))
+    >>> frame_b = Image.new("RGB", (16, 16), (0, 0, 255))
+    >>> gif = io.BytesIO()
+    >>> frame_a.save(gif, format="GIF", save_all=True, append_images=[frame_b], duration=80, loop=0)
+    >>> animated = Image.open(io.BytesIO(downscale_image(gif.getvalue(), "gif")))
+    >>> animated.size == (16, 16) and animated.n_frames == 2
+    True
+    >>> downscale_image(_png_claiming(8000, 8000), "png")
+    Traceback (most recent call last):
+    ...
+    uploads.ImageTooLarge: Image is too large
     """
     try:
         with Image.open(io.BytesIO(data)) as image:
+            _reject_input(image)
             orientation = image.getexif().get(274) or 1
             if orientation not in (0, 1):
                 image = ImageOps.exif_transpose(image)
+                _reject_input(image)
             target = fit_within(image.width, image.height)
-            if target == (image.width, image.height) and orientation in (0, 1):
-                return data
             encoded = _encode_fitted(image, target, kind)
-    except (UnidentifiedImageError, Image.DecompressionBombError, OSError) as exc:
+    except Image.DecompressionBombError as exc:
+        raise ImageTooLarge("Image is too large") from exc
+    except (UnidentifiedImageError, OSError) as exc:
         raise ValueError("Could not read image") from exc
     _ensure_fits(encoded)
     return encoded
+
+
+def _png_claiming(width: int, height: int) -> bytes:
+    """PNG header that claims ``width`` x ``height`` without a real bitmap."""
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        crc = zlib.crc32(tag + data) & 0xFFFFFFFF
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
+
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", ihdr)
+        + chunk(b"IDAT", zlib.compress(b"\x00" * 16))
+        + chunk(b"IEND", b"")
+    )
+
+
+def _reject_input(image: Image.Image) -> None:
+    """Reject dimensions and frame counts before pixel data is expanded.
+
+    Examples
+    --------
+    >>> class _Fake:
+    ...     size = (13000, 13000)
+    ...     n_frames = 1
+    >>> _reject_input(_Fake())
+    Traceback (most recent call last):
+    ...
+    uploads.ImageTooLarge: Image is too large
+    >>> class _Gif:
+    ...     size = (4000, 2250)
+    ...     n_frames = 100
+    >>> _reject_input(_Gif())
+    >>> class _Many:
+    ...     size = (100, 100)
+    ...     n_frames = 201
+    >>> _reject_input(_Many())
+    Traceback (most recent call last):
+    ...
+    uploads.ImageTooLarge: Image is too large
+    """
+    width, height = image.size
+    if width < 1 or height < 1:
+        raise ValueError("Image dimensions must be positive")
+    frames = int(getattr(image, "n_frames", 1) or 1)
+    if (
+        width * height > MAX_INPUT_PIXELS
+        or frames > MAX_FRAMES
+        or frames * width * height > MAX_TOTAL_PIXELS
+    ):
+        raise ImageTooLarge("Image is too large")
 
 
 def _encode_fitted(image: Image.Image, target: tuple[int, int], kind: str) -> bytes:
@@ -271,10 +367,26 @@ def _encode_animation(image: Image.Image, target: tuple[int, int], kind: str) ->
 
 
 def _ensure_fits(data: bytes) -> None:
+    """Reject an encoded image that is outside the Full HD box.
+
+    Examples
+    --------
+    >>> import io
+    >>> from PIL import Image
+    >>> ok = io.BytesIO()
+    >>> Image.new("RGB", (1920, 1080), (1, 1, 1)).save(ok, format="PNG")
+    >>> _ensure_fits(ok.getvalue())
+    >>> over = io.BytesIO()
+    >>> Image.new("RGB", (1921, 1080), (1, 1, 1)).save(over, format="PNG")
+    >>> _ensure_fits(over.getvalue())
+    Traceback (most recent call last):
+    ...
+    uploads.ImageTooLarge: Image is 1921x1080 after downscale
+    """
     with Image.open(io.BytesIO(data)) as image:
         width, height = image.size
     if width < 1 or height < 1 or width > MAX_WIDTH or height > MAX_HEIGHT:
-        raise ValueError(f"Image is {width}x{height} after downscale")
+        raise ImageTooLarge(f"Image is {width}x{height} after downscale")
 
 
 def content_type_for(name: str) -> str:
@@ -381,6 +493,7 @@ def apply_retention(
     ...     _ = (directory / fresh).write_bytes(b"f")
     ...     _ = (directory / stale).write_bytes(b"s")
     ...     _ = (directory / "notes.txt").write_bytes(b"junk")
+    ...     _ = (directory / ".gitkeep").write_bytes(b"")
     ...     kept = apply_retention(
     ...         directory,
     ...         [
@@ -395,9 +508,10 @@ def apply_retention(
     ...         [record.name for record in kept] == [fresh],
     ...         (directory / fresh).is_file(),
     ...         not (directory / stale).exists(),
-    ...         not (directory / "notes.txt").exists(),
+    ...         (directory / "notes.txt").is_file(),
+    ...         (directory / ".gitkeep").is_file(),
     ...     )
-    (True, True, True, True, True)
+    (True, True, True, True, True, True)
     """
     directory.mkdir(parents=True, exist_ok=True)
     existing = {
@@ -415,6 +529,8 @@ def apply_retention(
     kept_names = {record.name for record in kept}
     for path in list(directory.iterdir()):
         if path.name in PRESERVE_NAMES or path.name in kept_names:
+            continue
+        if _safe_name(path.name) is None:
             continue
         if path.is_symlink() or path.is_file():
             path.unlink()
@@ -592,7 +708,7 @@ class UploadStore:
         ...         names == on_disk,
         ...         not (store.directory / stale).exists(),
         ...         not (store.directory / past_cap).exists(),
-        ...         not (store.directory / "notes.txt").exists(),
+        ...         (store.directory / "notes.txt").is_file(),
         ...     )
         (True, True, True, True, True, True, True, True)
         """
