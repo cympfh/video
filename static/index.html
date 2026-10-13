@@ -220,13 +220,34 @@
       return !file.type.startsWith("image/");
     }
 
-    function errorDetail(data) {
-      if (data && typeof data.detail === "string") return data.detail;
-      return "Upload failed.";
-    }
-
     const MAX_WIDTH = 1920;
     const MAX_HEIGHT = 1080;
+    const UPLOAD_BUDGET = 900 * 1024;
+
+    function detailText(data) {
+      if (!data || typeof data !== "object") return "";
+      if (typeof data.detail === "string" && data.detail && !data.detail.includes("<")) {
+        return data.detail;
+      }
+      if (Array.isArray(data.detail) && data.detail[0] && typeof data.detail[0].msg === "string") {
+        return data.detail[0].msg;
+      }
+      return "";
+    }
+
+    function uploadFailureMessage(status, data) {
+      const detail = detailText(data);
+      if (status === 413) {
+        return detail || "This image is too large to upload.";
+      }
+      if (status === 400) {
+        return detail || "This file was rejected. Drop an image the server can accept.";
+      }
+      if (status >= 500) {
+        return "The server could not store this image. Try again.";
+      }
+      return detail || "Upload failed (" + status + ").";
+    }
 
     function roundHalfUp(value) {
       return Math.floor(value + 0.5);
@@ -248,28 +269,74 @@
       return "image/png";
     }
 
+    function fileFromBlob(blob, originalName, type) {
+      const ext = type === "image/jpeg" ? ".jpg" : type === "image/webp" ? ".webp" : ".png";
+      const base = (originalName || "image").replace(/\.[^.]+$/, "") || "image";
+      return new File([blob], base + ext, { type: blob.type || type });
+    }
+
+    function encodeCanvas(canvas, type, quality) {
+      return new Promise((resolve) => {
+        canvas.toBlob((blob) => resolve(blob), type, quality);
+      });
+    }
+
+    async function encodeFit(bitmap, width, height, type, quality, originalName) {
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d");
+      if (type === "image/jpeg") {
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, width, height);
+      }
+      context.drawImage(bitmap, 0, 0, width, height);
+      const blob = await encodeCanvas(canvas, type, quality);
+      if (!blob) return null;
+      return fileFromBlob(blob, originalName, type);
+    }
+
+    async function shrinkToBudget(bitmap, width, height, originalName) {
+      const qualities = [0.86, 0.72, 0.58, 0.44, 0.3, 0.18];
+      const scales = [1, 0.75, 0.5, 0.35];
+      for (const scale of scales) {
+        const scaledWidth = Math.max(1, Math.min(width, roundHalfUp(width * scale)));
+        const scaledHeight = Math.max(1, Math.min(height, roundHalfUp(height * scale)));
+        for (const quality of qualities) {
+          for (const type of ["image/jpeg", "image/webp"]) {
+            const candidate = await encodeFit(
+              bitmap, scaledWidth, scaledHeight, type, quality, originalName
+            );
+            if (candidate && candidate.size <= UPLOAD_BUDGET) return candidate;
+          }
+        }
+      }
+      return null;
+    }
+
     async function prepareUpload(file) {
       let bitmap;
       try {
         bitmap = await createImageBitmap(file);
       } catch (e) {
-        return file;
+        if (file.size <= UPLOAD_BUDGET) return file;
+        throw new Error("too-large");
       }
       try {
-        if (!bitmap.width || !bitmap.height) return file;
+        if (!bitmap.width || !bitmap.height) {
+          if (file.size <= UPLOAD_BUDGET) return file;
+          throw new Error("too-large");
+        }
         const size = fittedSize(bitmap.width, bitmap.height);
-        if (size.width === bitmap.width && size.height === bitmap.height) return file;
-        const canvas = document.createElement("canvas");
-        canvas.width = size.width;
-        canvas.height = size.height;
-        const context = canvas.getContext("2d");
-        context.drawImage(bitmap, 0, 0, size.width, size.height);
-        const type = blobType(file.type);
-        const blob = await new Promise((resolve) => canvas.toBlob(resolve, type, 0.92));
-        if (!blob) return file;
-        const ext = type === "image/jpeg" ? ".jpg" : type === "image/webp" ? ".webp" : ".png";
-        const base = (file.name || "image").replace(/\.[^.]+$/, "");
-        return new File([blob], base + ext, { type: blob.type || type });
+        const fitsBox = size.width === bitmap.width && size.height === bitmap.height;
+        if (fitsBox && file.size <= UPLOAD_BUDGET) return file;
+        const typed = await encodeFit(
+          bitmap, size.width, size.height, blobType(file.type), 0.92, file.name
+        );
+        if (typed && typed.size <= UPLOAD_BUDGET) return typed;
+        const shrunk = await shrinkToBudget(bitmap, size.width, size.height, file.name);
+        if (shrunk) return shrunk;
+        throw new Error("too-large");
       } finally {
         bitmap.close();
       }
@@ -285,28 +352,45 @@
       uploading = true;
       converted.textContent = "Uploading…";
       copy.hidden = true;
-      let prepared = file;
       try {
-        prepared = await prepareUpload(file);
-      } catch (e) {
-        prepared = file;
-      }
-      const body = new FormData();
-      body.append("file", prepared, prepared.name || "image");
-      try {
-        const response = await fetch("/video/upload", { method: "POST", body });
-        const data = await response.json().catch(() => ({}));
+        let prepared;
+        try {
+          prepared = await prepareUpload(file);
+        } catch (e) {
+          render();
+          showError("This image is too large to upload. It could not be reduced under 900KB.");
+          return;
+        }
+        if (prepared.size > UPLOAD_BUDGET) {
+          render();
+          showError("This image is too large to upload. It could not be reduced under 900KB.");
+          return;
+        }
+        const body = new FormData();
+        body.append("file", prepared, prepared.name || "image");
+        let response;
+        try {
+          response = await fetch("/video/upload", { method: "POST", body });
+        } catch (e) {
+          render();
+          showError("Could not reach the server. Check your connection and try again.");
+          return;
+        }
+        const raw = await response.text();
+        let data = {};
+        try {
+          data = JSON.parse(raw);
+        } catch (e) {
+          data = {};
+        }
         if (!response.ok || !data.path || !data.path.startsWith("/video/uploads/")) {
           render();
-          showError(errorDetail(data));
+          showError(uploadFailureMessage(response.status, data));
           return;
         }
         input.value = location.origin + data.path;
         clearError();
         render();
-      } catch {
-        render();
-        showError("Upload failed.");
       } finally {
         uploading = false;
         input.classList.remove("dragover");
