@@ -56,6 +56,8 @@ Example:
 https://s.cympfh.cc/video?url=https://example.com/cat1.jpg&url=https://example.com/cat2.jpg&interval=10
 ```
 
+**Upload:** `POST /video/upload` (multipart field `file`) stores an image and returns `url`, a stream link of the same shape. That link is always under `PUBLIC_BASE_URL`, which defaults to `https://s.cympfh.cc`. It does not follow `Host` or `X-Forwarded-*`. For a local player, set `PUBLIC_BASE_URL=http://127.0.0.1:8095`.
+
 ### 🔍 YouTube Search
 
 **Search results as image:**
