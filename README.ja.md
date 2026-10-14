@@ -54,6 +54,8 @@ https://s.cympfh.cc/video?url={IMAGE_URL_1}&url={IMAGE_URL_2}&url={IMAGE_URL_3}&
 https://s.cympfh.cc/video?url=https://example.com/cat1.jpg&url=https://example.com/cat2.jpg&interval=10
 ```
 
+**アップロード:** `POST /video/upload`（multipart の `file`）で画像を保存し、同じ形のストリーム URL を `url` で返します。この URL は常に `PUBLIC_BASE_URL` の下になります。未設定時は `https://s.cympfh.cc` です。`Host` や `X-Forwarded-*` は使いません。手元のプレイヤーで再生するときは `PUBLIC_BASE_URL=http://127.0.0.1:8095` のように指定します。
+
 ### 🔍 YouTube検索
 
 **検索結果を画像として表示:**

@@ -1,6 +1,8 @@
 import logging
+import os
 from pathlib import Path
 from enum import Enum
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
@@ -384,79 +386,79 @@ async def hanime_media(video_id: str, request: Request):
     )
 
 
-def external_base_url(
-    scheme: str,
-    host: str,
-    forwarded_proto: str | None = None,
-    forwarded_host: str | None = None,
-) -> str:
-    """Public origin for links we hand back to the client.
+DEFAULT_PUBLIC_BASE_URL = "https://s.cympfh.cc"
 
-    Behind nginx the app itself is plain HTTP. ``X-Forwarded-Proto`` and
-    ``X-Forwarded-Host`` carry the scheme and host the browser used. A direct
-    local request has neither header, so it stays ``http``.
+
+def public_base_url(raw: str | None = None) -> str:
+    """Origin prefixed onto upload stream URLs.
+
+    Empty means ``https://s.cympfh.cc``. A local server can set
+    ``PUBLIC_BASE_URL`` to something like ``http://127.0.0.1:8095``.
+    Request headers are not consulted.
 
     Examples
     --------
-    >>> external_base_url("http", "127.0.0.1:8080")
-    'http://127.0.0.1:8080'
-    >>> external_base_url("http", "s.cympfh.cc", "https")
+    >>> public_base_url(None)
     'https://s.cympfh.cc'
-    >>> external_base_url("http", "127.0.0.1:8080", "https, http", "s.cympfh.cc")
+    >>> public_base_url("  ")
     'https://s.cympfh.cc'
-    >>> external_base_url("http", "s.cympfh.cc", "HTTPS")
+    >>> public_base_url("https://s.cympfh.cc/")
     'https://s.cympfh.cc'
-    >>> external_base_url("http", "127.0.0.1:8080", "ftp", "bad host")
-    'http://127.0.0.1:8080'
-    >>> external_base_url("http", "localhost:8080", None, "evil.example/path")
-    'http://localhost:8080'
+    >>> public_base_url("http://127.0.0.1:8095/")
+    'http://127.0.0.1:8095'
+    >>> public_base_url("ftp://s.cympfh.cc")
+    Traceback (most recent call last):
+    ...
+    ValueError: PUBLIC_BASE_URL must be an absolute http(s) origin
     """
-    proto = _forwarded_token(forwarded_proto).lower()
-    if proto not in ("http", "https"):
-        proto = scheme if scheme in ("http", "https") else "http"
-    forwarded = _forwarded_token(forwarded_host)
-    chosen = forwarded if _acceptable_host(forwarded) else host
-    return f"{proto}://{chosen}".rstrip("/")
+    value = (raw or "").strip() or DEFAULT_PUBLIC_BASE_URL
+    parsed = urlparse(value)
+    if (
+        parsed.scheme not in ("http", "https")
+        or not parsed.hostname
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+    ):
+        raise ValueError("PUBLIC_BASE_URL must be an absolute http(s) origin")
+    return f"{parsed.scheme}://{parsed.netloc}"
 
 
-def _forwarded_token(value: str | None) -> str:
-    if not value:
-        return ""
-    return value.split(",")[0].strip()
+def configured_public_base() -> str:
+    return public_base_url(os.environ.get("PUBLIC_BASE_URL"))
 
 
-def _acceptable_host(value: str) -> bool:
-    if not value or len(value) > 255:
-        return False
-    return all(ch.isalnum() or ch in ".:[]-" for ch in value)
-
-
-def request_public_base(request: Request) -> str:
-    return external_base_url(
-        request.url.scheme,
-        request.headers.get("host") or request.url.netloc,
-        request.headers.get("x-forwarded-proto"),
-        request.headers.get("x-forwarded-host"),
-    )
-
-
-def _posted_upload_url(headers: dict[str, str] | None = None) -> str:
+def _posted_upload_url(
+    headers: dict[str, str] | None = None,
+    public_base: str | None = None,
+) -> str:
     """POST a tiny PNG and return the stream URL the handler built.
 
+    ``public_base`` is written to ``PUBLIC_BASE_URL`` for the request.
+    ``None`` clears that variable so the default origin is used. Spoofed
+    forwarding headers must not change the result.
+
     Examples
     --------
-    >>> forwarded = _posted_upload_url({
-    ...     "x-forwarded-proto": "https, http",
-    ...     "x-forwarded-host": "s.cympfh.cc",
-    ... })
-    >>> forwarded.startswith("https://s.cympfh.cc/video?url=")
+    >>> spoofed = {
+    ...     "x-forwarded-proto": "http",
+    ...     "x-forwarded-host": "evil.example",
+    ...     "host": "evil.example",
+    ... }
+    >>> url = _posted_upload_url(spoofed)
+    >>> url.startswith("https://s.cympfh.cc/video?url=")
     True
-    >>> "https%3A%2F%2Fs.cympfh.cc%2Fvideo%2Fuploads%2F" in forwarded
+    >>> "https%3A%2F%2Fs.cympfh.cc%2Fvideo%2Fuploads%2F" in url
     True
-    >>> "http%3A" not in forwarded
+    >>> "evil.example" not in url
     True
-    >>> local = _posted_upload_url()
-    >>> local.startswith("http://testserver/video?url=http%3A%2F%2Ftestserver%2F")
+    >>> local = _posted_upload_url(spoofed, "http://127.0.0.1:8095")
+    >>> local.startswith("http://127.0.0.1:8095/video?url=")
+    True
+    >>> "http%3A%2F%2F127.0.0.1%3A8095%2Fvideo%2Fuploads%2F" in local
+    True
+    >>> "evil.example" not in local
     True
     """
     import io
@@ -473,6 +475,11 @@ def _posted_upload_url(headers: dict[str, str] | None = None) -> str:
     Image.new("RGB", (4, 4), (9, 9, 9)).save(buffer, format="PNG")
     payload = buffer.getvalue()
     previous = upload_store
+    saved = os.environ.get("PUBLIC_BASE_URL")
+    if public_base is None:
+        os.environ.pop("PUBLIC_BASE_URL", None)
+    else:
+        os.environ["PUBLIC_BASE_URL"] = public_base
     with tempfile.TemporaryDirectory() as tmp:
         upload_store = UploadStore(Path(tmp))
         upload_store.ensure()
@@ -485,6 +492,10 @@ def _posted_upload_url(headers: dict[str, str] | None = None) -> str:
                 )
         finally:
             upload_store = previous
+            if saved is None:
+                os.environ.pop("PUBLIC_BASE_URL", None)
+            else:
+                os.environ["PUBLIC_BASE_URL"] = saved
     response.raise_for_status()
     return response.json()["url"]
 
@@ -528,7 +539,7 @@ async def upload_image(request: Request, file: UploadFile = File(...)):
     except (OSError, ValueError) as exc:
         logger.warning(f"Failed to downscale upload: {exc}")
         raise HTTPException(status_code=400, detail="Only image files are accepted")
-    base = request_public_base(request)
+    base = configured_public_base()
     logger.info(
         f"Upload {record.name} received {len(data)} bytes "
         f"(content-length {request.headers.get('content-length')})"
