@@ -18,7 +18,7 @@ Public examples use `https://s.cympfh.cc/video?url=...` (https, not http).
   - `random/videos.py` - Date-seeded pick from a public gist of video URLs
   - `random/live.py` - Date/hour-seeded walk of a secret gist of YouTube channel IDs or `@handle`s, first currently-live wins
   - `sites/x_video.py` - `X` class. Resolves a public status URL to a `video.twimg.com` mp4
-- **Static**: `/video/stream` (HLS), `/video/uploads/{name}` (stored upload bytes)
+- **Static**: `/video/stream` (HLS), `/video/uploads/{name}` (stored upload bytes). `.ts` segments are served as `video/mp2t` (the host mime database otherwise calls them Qt Linguist files). `.m3u8` stays `application/vnd.apple.mpegurl`.
 
 ### URL processing
 
