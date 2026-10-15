@@ -1,4 +1,5 @@
 import logging
+import mimetypes
 import os
 from pathlib import Path
 from enum import Enum
@@ -24,6 +25,31 @@ from util.streaming.uploads import (
 )
 
 logger = logging.getLogger("uvicorn")
+
+
+def register_hls_media_types() -> None:
+    """Map ``.ts`` to MPEG-TS instead of a Qt Linguist translation.
+
+    Debian and Ubuntu register ``.ts`` as ``text/vnd.trolltech.linguist``.
+    HLS segments under ``/video/stream`` are MPEG transport streams, so
+    players need ``video/mp2t``. Playlists stay ``application/vnd.apple.mpegurl``.
+
+    Examples
+    --------
+    >>> register_hls_media_types()
+    >>> mimetypes.guess_type("seg_00000.ts")[0]
+    'video/mp2t'
+    >>> mimetypes.guess_type("index.m3u8")[0]
+    'application/vnd.apple.mpegurl'
+    >>> mimetypes.guess_type("still.png")[0]
+    'image/png'
+    >>> mimetypes.guess_type("clip.mp4")[0]
+    'video/mp4'
+    """
+    mimetypes.add_type("video/mp2t", ".ts")
+
+
+register_hls_media_types()
 istream = util.ImageStream()
 upload_store = UploadStore(default_upload_dir())
 upload_store.ensure()
@@ -560,6 +586,49 @@ async def uploaded_image(name: str):
         media_type=content_type_for(name),
         headers={"x-content-type-options": "nosniff"},
     )
+
+
+def _stream_content_types() -> tuple[str, str, str, str]:
+    """Content-Type headers for files served from ``/video/stream``.
+
+    Examples
+    --------
+    >>> _stream_content_types()
+    ('video/mp2t', 'application/vnd.apple.mpegurl', 'image/png', 'video/mp4')
+    """
+    import shutil
+    import tempfile
+
+    from fastapi.testclient import TestClient
+
+    directory = Path(tempfile.mkdtemp(prefix="ctype-", dir="stream"))
+    try:
+        (directory / "seg.ts").write_bytes(b"\x47" * 188)
+        (directory / "index.m3u8").write_text("#EXTM3U\n", encoding="utf-8")
+        (directory / "still.png").write_bytes(
+            bytes.fromhex(
+                "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753"
+                "de0000000c4944415408d763f8ffff3f0005fe02fea2c3e61a0000000049454e"
+                "44ae426082"
+            )
+        )
+        (directory / "clip.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42")
+        prefix = "/video/stream/" + directory.name
+        with TestClient(app) as client:
+            segment = client.get(prefix + "/seg.ts")
+            playlist = client.get(prefix + "/index.m3u8")
+            image = client.get(prefix + "/still.png")
+            video = client.get(prefix + "/clip.mp4")
+        for response in (segment, playlist, image, video):
+            response.raise_for_status()
+        return (
+            segment.headers["content-type"],
+            playlist.headers["content-type"],
+            image.headers["content-type"],
+            video.headers["content-type"],
+        )
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
 
 
 # ImageStream
