@@ -399,15 +399,22 @@ def unwrap_wrapped_url(url: str, our_hosts: set[str]) -> str:
     return url
 
 
-async def resolve_track_info(url: str) -> util.SoundCloudTrack:
-    """URL をトラック情報に解決する。対応していないサイトは 404"""
-    sc = util.SoundCloud()
-    if sc.is_track(url):
-        try:
-            return await sc.resolve_track(url)
-        except (LookupError, httpx.HTTPError, ValueError) as e:
-            logger.warning(f"Failed to resolve track info: {url}: {e}")
-            raise HTTPException(status_code=502, detail="Failed to resolve track info")
+async def resolve_track_info(url: str) -> util.TrackInfo:
+    """URL をトラック情報に解決する。対応していないサイトは 404
+
+    対応: SoundCloud / YouTube / ニコニコ動画 / bilibili
+    """
+    resolvers = (util.SoundCloud(), util.YouTubeInfo(), util.NicoVideo(), util.Bilibili())
+    detectors = ("is_track", "is_video", "is_video", "is_video")
+    for resolver, detector in zip(resolvers, detectors):
+        if getattr(resolver, detector)(url):
+            try:
+                return await resolver.resolve_track(url)
+            except (LookupError, httpx.HTTPError, ValueError) as e:
+                logger.warning(f"Failed to resolve track info: {url}: {e}")
+                raise HTTPException(
+                    status_code=502, detail="Failed to resolve track info"
+                )
     raise HTTPException(status_code=404, detail="Unsupported URL")
 
 
@@ -434,16 +441,16 @@ async def track_info(request: Request, url: str = Query(...)):
         "title": track.display_title,
         "track": track.title,
         "artist": track.artist,
-        "artwork": track.artwork(),
+        "artwork": track.artwork_url,
     }
 
 
 @app.get("/video/thumbnail")
 async def track_thumbnail(request: Request, url: str = Query(...)):
-    """トラックのアートワーク画像 (500px) を中継する"""
+    """トラックのアートワーク画像を中継する"""
     inner = unwrap_wrapped_url(url, _info_hosts(request))
     track = await resolve_track_info(inner)
-    artwork = track.artwork()
+    artwork = track.artwork_url
     if not artwork:
         raise HTTPException(status_code=404, detail="No artwork on track")
     async with httpx.AsyncClient(

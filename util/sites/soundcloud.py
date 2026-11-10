@@ -1,8 +1,9 @@
 import re
 import urllib.parse
-from dataclasses import dataclass
 
 import httpx
+
+from util.trackinfo import TrackInfo
 
 # client_id は soundcloud.com の JS アセットからスクレイプする (yt-dlp と同じ手口)。
 # たまにローテーションされるので、401/403 を受けたら取り直す。
@@ -12,42 +13,19 @@ _CLIENT_ID_RE = re.compile(r'client_id\s*[:=]\s*"([0-9a-zA-Z]+)"')
 _SCRIPT_SRC_RE = re.compile(r'src="(https://[^"]+\.js)"')
 
 
-@dataclass
-class SoundCloudTrack:
-    """A resolved SoundCloud track's metadata."""
+def resize_artwork(url: str | None, size: str = "t500x500") -> str | None:
+    """SoundCloud のアートワーク URL の ``-large`` (100px) を指定サイズに置き換える
 
-    url: str
-    title: str
-    artist: str
-    artwork_url: str | None = None
-
-    @property
-    def display_title(self) -> str:
-        """YamaPlayer などに表示するための1行タイトル
-
-        >>> SoundCloudTrack("u", "Song", "Artist").display_title
-        'Artist - Song'
-        >>> SoundCloudTrack("u", "Song", "").display_title
-        'Song'
-        """
-        if self.artist:
-            return f"{self.artist} - {self.title}"
-        return self.title
-
-    def artwork(self, size: str = "t500x500") -> str | None:
-        """アートワーク画像の URL。``-large`` (100px) を指定サイズに置き換える
-
-        >>> t = SoundCloudTrack("u", "Song", "Artist", "https://i1.sndcdn.com/artworks-abc-large.jpg")
-        >>> t.artwork()
-        'https://i1.sndcdn.com/artworks-abc-t500x500.jpg'
-        >>> t.artwork("original")
-        'https://i1.sndcdn.com/artworks-abc-original.jpg'
-        >>> SoundCloudTrack("u", "Song", "Artist").artwork() is None
-        True
-        """
-        if not self.artwork_url:
-            return None
-        return re.sub(r"-large(\.\w+)$", rf"-{size}\1", self.artwork_url)
+    >>> resize_artwork("https://i1.sndcdn.com/artworks-abc-large.jpg")
+    'https://i1.sndcdn.com/artworks-abc-t500x500.jpg'
+    >>> resize_artwork("https://i1.sndcdn.com/artworks-abc-large.jpg", "original")
+    'https://i1.sndcdn.com/artworks-abc-original.jpg'
+    >>> resize_artwork(None) is None
+    True
+    """
+    if not url:
+        return None
+    return re.sub(r"-large(\.\w+)$", rf"-{size}\1", url)
 
 
 class SoundCloud:
@@ -153,7 +131,7 @@ class SoundCloud:
             raise LookupError(f"Not a track: {url}")
         return payload
 
-    async def resolve_track(self, url: str) -> SoundCloudTrack:
+    async def resolve_track(self, url: str) -> TrackInfo:
         """トラック URL をメタデータ (タイトル・アーティスト・アートワーク) に解決する"""
         if not self.is_track(url):
             raise ValueError(f"Not a SoundCloud track URL: {url}")
@@ -162,11 +140,11 @@ class SoundCloud:
         if not artwork:
             # トラックにアートワークが無いときは作者のアバターで代用する
             artwork = (payload.get("user") or {}).get("avatar_url")
-        return SoundCloudTrack(
+        return TrackInfo(
             url=payload.get("permalink_url") or url,
             title=payload.get("title") or "",
             artist=(payload.get("user") or {}).get("username") or "",
-            artwork_url=artwork,
+            artwork_url=resize_artwork(artwork),
         )
 
     async def resolve_stream(self, url: str) -> str:

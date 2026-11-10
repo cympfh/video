@@ -50,7 +50,7 @@ https://s.cympfh.cc/video/info?url={TRACK_OR_WRAPPED_URL}       # title / artist
 https://s.cympfh.cc/video/thumbnail?url={TRACK_OR_WRAPPED_URL}  # 500px artwork image
 ```
 
-Both accept either a SoundCloud track URL or a URL already wrapped in `https://s.cympfh.cc/video?url=...`.
+Both work with SoundCloud tracks, YouTube, niconico, and bilibili videos, and accept either the original URL or one already wrapped in `https://s.cympfh.cc/video?url=...`.
 For YamaPlayer, `yamaplayer/TrackInfoLoader.cs` is a drop-in module that shows the track title
 (and the artwork on an optional Renderer); see `yamaplayer/README.md`.
 

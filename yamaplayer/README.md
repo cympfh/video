@@ -7,7 +7,7 @@
 YamaPlayer 標準の VideoInfoDownloader は YouTube / Twitch にしか
 対応していませんが、このモジュールは video サーバーの
 `/video/info` エンドポイントからタイトルを取得します。
-いまのところ SoundCloud のトラックに対応しています。
+SoundCloud のトラック、YouTube、ニコニコ動画、bilibili の動画に対応しています。
 
 ## 導入
 

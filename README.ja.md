@@ -48,7 +48,7 @@ https://s.cympfh.cc/video/info?url={トラックまたはラップ済みURL}    
 https://s.cympfh.cc/video/thumbnail?url={トラックまたはラップ済みURL}  # 500px のアートワーク画像
 ```
 
-どちらも SoundCloud のトラック URL と、`https://s.cympfh.cc/video?url=...` でラップ済みの URL の両方を受け付けます。
+SoundCloud のトラック、YouTube、ニコニコ動画、bilibili の動画に対応し、元の URL と `https://s.cympfh.cc/video?url=...` でラップ済みの URL の両方を受け付けます。
 YamaPlayer 向けには、トラックのタイトル（と任意でアートワーク）を表示するドロップイン モジュール
 `yamaplayer/TrackInfoLoader.cs` があります。`yamaplayer/README.md` を参照してください。
 
