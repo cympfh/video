@@ -419,6 +419,7 @@ async def resolve_track_info(url: str) -> util.TrackInfo:
 
 
 def _info_hosts(request: Request) -> set[str]:
+    """info / thumbnail で URL のラップ解除を許可するホスト名の集合"""
     hosts = {"s.cympfh.cc", "localhost", "127.0.0.1"}
     if request.url.hostname:
         hosts.add(request.url.hostname.lower())

@@ -31,6 +31,7 @@ class YouTubeInfo:
     }
 
     def is_video(self, url: str) -> bool:
+        """動画の URL (watch / youtu.be / shorts / live) なら True"""
         parsed = urllib.parse.urlparse(url)
         host = parsed.netloc.lower()
         if host in ("youtu.be", "www.youtu.be"):

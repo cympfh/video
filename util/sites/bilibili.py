@@ -37,6 +37,7 @@ class Bilibili:
     }
 
     def bvid(self, url: str) -> str | None:
+        """動画 URL から BV ID を取り出す。動画でなければ None"""
         parsed = urllib.parse.urlparse(url)
         if parsed.netloc.lower() not in self._HOSTS:
             return None
@@ -44,6 +45,7 @@ class Bilibili:
         return match.group(1) if match else None
 
     def is_video(self, url: str) -> bool:
+        """動画の URL (``/video/BV...``) なら True"""
         return self.bvid(url) is not None
 
     async def resolve_track(self, url: str) -> TrackInfo:

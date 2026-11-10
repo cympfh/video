@@ -31,6 +31,7 @@ class NicoVideo:
     _LIFE_HOSTS = {"nicovideo.life", "www.nicovideo.life"}
 
     def video_id(self, url: str) -> str | None:
+        """動画 URL から動画 ID (``sm9`` など) を取り出す。動画でなければ None"""
         parsed = urllib.parse.urlparse(url)
         host = parsed.netloc.lower()
         if host in self._HOSTS:
@@ -43,6 +44,7 @@ class NicoVideo:
         return None
 
     def is_video(self, url: str) -> bool:
+        """動画の URL (nicovideo.jp / nicovideo.life の watch) なら True"""
         return self.video_id(url) is not None
 
     async def resolve_track(self, url: str) -> TrackInfo:
@@ -66,6 +68,7 @@ class NicoVideo:
             raise LookupError(f"No thumb info for video: {url}")
 
         def text(tag: str) -> str:
+            """``<thumb>`` 直下の要素のテキストを返す。無ければ空文字"""
             elem = thumb.find(tag)
             return (elem.text or "") if elem is not None else ""
 

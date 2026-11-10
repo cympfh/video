@@ -70,6 +70,7 @@ class SoundCloud:
     }
 
     def is_track(self, url: str) -> bool:
+        """トラックのページ URL (`/{user}/{slug}`) なら True"""
         parsed = urllib.parse.urlparse(url)
         if parsed.netloc.lower() not in self._HOSTS:
             return False
@@ -79,6 +80,7 @@ class SoundCloud:
         return segments[0].lower() not in self._RESERVED
 
     async def _scrape_client_id(self) -> str:
+        """soundcloud.com の JS アセットから client_id をスクレイプする"""
         async with httpx.AsyncClient(
             headers={"User-Agent": "Mozilla/5.0"}, follow_redirects=True
         ) as client:
@@ -95,12 +97,14 @@ class SoundCloud:
         raise LookupError("Could not scrape SoundCloud client_id")
 
     async def _client_id(self, force_refresh: bool = False) -> str:
+        """キャッシュした client_id を返す。``force_refresh`` で取り直す"""
         global _client_id_cache
         if force_refresh or _client_id_cache is None:
             _client_id_cache = await self._scrape_client_id()
         return _client_id_cache
 
     def _best_transcoding(self, track: dict) -> dict | None:
+        """トラックのトランスコーディング一覧から最適なもの (HLS AAC 優先) を選ぶ"""
         transcodings = (track.get("media") or {}).get("transcodings") or []
 
         def score(t: dict) -> tuple[int, int]:
