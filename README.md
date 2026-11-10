@@ -41,7 +41,12 @@ Proxies video content for VRChat playback. Posts without a video but with photos
 ```
 https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood
 ```
-Resolves public tracks to their HLS audio stream. No API key needed. Playlists and profiles are not supported.
+Plays public tracks as a video: the track artwork (centered, with a blurred copy filling the 16:9 frame; black when the track has no artwork) stays on screen while the audio plays. It is an HLS stream (h264 + aac) that starts after the first few seconds are encoded, so VRChat players do not time out. No API key needed. Playlists and profiles are not supported.
+
+Add `&audio=1` for the previous audio-only behavior (a redirect to SoundCloud's own HLS audio stream):
+```
+https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood&audio=1
+```
 
 ### 🖼️ Images
 

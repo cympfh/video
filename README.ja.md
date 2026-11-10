@@ -39,7 +39,12 @@ VRChat再生のために動画コンテンツをプロキシします。動画�
 ```
 https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood
 ```
-公開トラックを HLS の音声ストリームに解決します。APIキーは不要です。プレイリスト・プロフィールは非対応です。
+公開トラックを映像付きで再生します。トラックのアートワークを中央に置き、16:9 の余白は同じ絵を拡大してぼかしたもので埋めた静止画に、音声を重ねます（アートワークが無いトラックは黒背景）。HLS（h264 + aac）で、最初の数秒がエンコードできた時点で再生が始まるので、VRChat のプレイヤーがタイムアウトしません。APIキーは不要です。プレイリスト・プロフィールは非対応です。
+
+従来どおり音声だけにしたいときは `&audio=1` を付けます（SoundCloud の HLS 音声ストリームへリダイレクト）。
+```
+https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood&audio=1
+```
 
 ### 🖼️ 画像
 
