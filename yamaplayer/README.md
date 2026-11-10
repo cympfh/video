@@ -11,8 +11,13 @@ SoundCloud のトラック、YouTube、ニコニコ動画、bilibili の動画�
 
 ## 導入
 
-1. `TrackInfoLoader.cs` をワールドプロジェクトの `Assets/` 以下に置く
-   （UdonSharp がコンパイルできる場所ならどこでもよい）
+1. `TrackInfoLoader.cs` と `YamaPlayerPatch.asmdef` を
+   **同じフォルダ**に置く（例: `Assets/Gimmicks/YamaPlayerPatch/`）
+   - asmdef は YamaPlayer (`Yamadev.YamaStream.Runtime`) などへの参照を宣言するものです。
+     これが無いと `error CS0246: YamaPlayerModule が見つからない` になります
+   - すでにそのフォルダ（または上位フォルダ）に asmdef がある場合は、
+     `YamaPlayerPatch.asmdef` は置かずに、既存 asmdef の `references` に
+     `Yamadev.YamaStream.Runtime` を追加してください
 2. シーンに空の GameObject を作り、コンパイル後に生成される
    `TrackInfoLoader` (Udon Behaviour) をアタッチする
 3. インスペクタの設定:
@@ -21,6 +26,9 @@ SoundCloud のトラック、YouTube、ニコニコ動画、bilibili の動画�
      Quad などの Renderer を指定（任意。空ならタイトルだけ設定する）
 
 Controller はシーン内の YamaPlayer から自動で探します。
+
+YamaPlayer はモジュール機構（`YamaPlayerModule` / `VideoInfoDownloader`）が
+あるバージョンが必要です。古い場合は先に YamaPlayer を更新してください。
 
 ## 動作
 
