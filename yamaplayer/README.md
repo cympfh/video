@@ -4,10 +4,14 @@
 `s.cympfh.cc/video?url=...` 経由の再生にタイトルを表示するための
 ドロップイン モジュールです。YamaPlayer 本体の改造は不要です。
 
-YamaPlayer 標準の VideoInfoDownloader は YouTube / Twitch にしか
+YamaPlayer 標準の VideoInfo は YouTube / Twitch にしか
 対応していませんが、このモジュールは video サーバーの
 `/video/info` エンドポイントからタイトルを取得します。
 SoundCloud のトラック、YouTube、ニコニコ動画、bilibili の動画に対応しています。
+
+YamaPlayer 1.5.x（`Listener` / `Controller.AddListener` がある版）で
+動作します。それより新しい版のモジュール機構（`YamaPlayerModule`）には
+対応していません。
 
 ## 導入
 
@@ -25,10 +29,8 @@ SoundCloud のトラック、YouTube、ニコニコ動画、bilibili の動画�
    - `Thumbnail Target`: アートワークを表示したい場合は
      Quad などの Renderer を指定（任意。空ならタイトルだけ設定する）
 
-Controller はシーン内の YamaPlayer から自動で探します。
-
-YamaPlayer はモジュール機構（`YamaPlayerModule` / `VideoInfoDownloader`）が
-あるバージョンが必要です。古い場合は先に YamaPlayer を更新してください。
+Controller はシーン内の YamaPlayer から自動で探します
+（見つからない場合はインスペクタの `Controller` に直接指定してください）。
 
 ## 動作
 
