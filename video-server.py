@@ -353,6 +353,17 @@ async def convert(url: str, p: int | None = None) -> str:
             logger.warning(f"Failed to resolve X video: {url}: {e}")
             raise HTTPException(status_code=502, detail="Failed to resolve X video")
 
+    # SoundCloud: api-v2 で HLS (m3u8) のストリーム URL に解決する
+    sc = util.SoundCloud()
+    if sc.is_track(url):
+        try:
+            return await sc.resolve_stream(url)
+        except (LookupError, httpx.HTTPError, ValueError) as e:
+            logger.warning(f"Failed to resolve SoundCloud track: {url}: {e}")
+            raise HTTPException(
+                status_code=502, detail="Failed to resolve SoundCloud track"
+            )
+
     # それ以外はそのまま返す
     return url
 

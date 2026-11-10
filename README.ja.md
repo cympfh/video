@@ -35,6 +35,12 @@ https://s.cympfh.cc/video?url=https://x.com/pa_draws/status/1849228056537497835
 ```
 VRChat再生のために動画コンテンツをプロキシします。動画が無く画像だけの投稿は、画像のスライドショー（1枚なら静止画）として表示します。
 
+**SoundCloud**
+```
+https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood
+```
+公開トラックを HLS の音声ストリームに解決します。APIキーは不要です。プレイリスト・プロフィールは非対応です。
+
 ### 🖼️ 画像
 
 **単一画像:**

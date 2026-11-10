@@ -37,6 +37,12 @@ https://s.cympfh.cc/video?url=https://x.com/pa_draws/status/1849228056537497835
 ```
 Proxies video content for VRChat playback. Posts without a video but with photos are shown as an image slideshow (a single photo becomes a still image).
 
+**SoundCloud**
+```
+https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood
+```
+Resolves public tracks to their HLS audio stream. No API key needed. Playlists and profiles are not supported.
+
 ### 🖼️ Images
 
 **Single Image:**

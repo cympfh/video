@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- SoundCloud track URLs resolve to their HLS audio stream via the public api-v2 (client_id is scraped from soundcloud.com and refreshed on 401/403). Public tracks only; playlists and profiles are passed through unchanged.
+
+### Added
+
 - X/Twitter status URLs without a video now play as an image slideshow of the post's photos (a single photo becomes a still image stream), instead of failing with 502.
 
 ### Fixed
