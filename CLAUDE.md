@@ -17,7 +17,7 @@ Public examples use `https://s.cympfh.cc/video?url=...` (https, not http).
   - `streaming/uploads.py` - Saved image uploads and retention (newest 10, and uploaded within 7 days)
   - `random/videos.py` - Date-seeded pick from a public gist of video URLs
   - `random/live.py` - Date/hour-seeded walk of a secret gist of YouTube channel IDs or `@handle`s, first currently-live wins
-  - `sites/x_video.py` - `X` class. Resolves a public status URL to a `video.twimg.com` mp4
+  - `sites/x_video.py` - `X` class. Resolves a public status URL to a `video.twimg.com` mp4, or to the post's photos (`XMedia` via `resolve()`; `resolve_mp4()` stays video-only)
 - **Static**: `/video/stream` (HLS), `/video/uploads/{name}` (stored upload bytes). `.ts` segments are served as `video/mp2t` (the host mime database otherwise calls them Qt Linguist files). `.m3u8` stays `application/vnd.apple.mpegurl`.
 
 ### URL processing
@@ -27,7 +27,7 @@ Public examples use `https://s.cympfh.cc/video?url=...` (https, not http).
 - **NicoNico** (`nicovideo.jp/watch/sm...`): rewrite to `https://www.nicovideo.life/watch?v={id}`.
 - **Bilibili**: wrap with `https://biliplayer.91vrchat.com/player/?url=`. Optional query `p` (1-based) is appended as `&p=N`. Do not put `p` inside the raw video URL; the top-level query parser strips it.
 - **iwara** (`iwara.tv/video/`): `https://nicovrc.net/?url={url}`.
-- **X / Twitter** (`x.com` or `twitter.com` `/status/{id}`): `util.X.resolve_mp4()`. No nicovrc.
+- **X / Twitter** (`x.com` or `twitter.com` `/status/{id}`): the route calls `util.X.resolve()` once and branches: video → 307 to the mp4; photos only → `ImageStream` slideshow (single photo → still image). Video wins when a status mixes both. `convert()` still uses video-only `resolve_mp4()`. No nicovrc.
 - **random**: gist list, shuffle seeded by UTC `YYYY/MM/DD`, index `hour % len`. Same day and hour returns the same video.
 - **random-live**: same time seed, then walk the list until a channel is live. `?url=random-live` must be matched before the `random` prefix. Gist: secret `https://gist.github.com/cympfh/e8ee500adacbc1bbfc717ca7cbb2a9b4` (`random-live-users`, one `@handle` or channel ID per line). 404 if nobody is live.
 - **Images**: single image, or 2+ `url=` values as a slideshow (`interval`, `loop`).

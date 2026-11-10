@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+
+- X/Twitter status URLs without a video now play as an image slideshow of the post's photos (a single photo becomes a still image stream), instead of failing with 502.
+
 ### Fixed
 
 - iwara URLs use `https://nicovrc.net/?url=` instead of `nicovrc.net/proxy/?`.
