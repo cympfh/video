@@ -192,6 +192,26 @@ async def root(
 
     match url_type:
         case UrlType.Video:
+            # X のステータスは動画とは限らない。動画があればリダイレクト、
+            # 画像だけならスライドショー(1枚なら通常の画像ストリーム)にする
+            x = util.X()
+            if x.is_status(url):
+                try:
+                    media = await x.resolve(url)
+                except (LookupError, httpx.HTTPError, ValueError) as e:
+                    logger.warning(f"Failed to resolve X status: {url}: {e}")
+                    raise HTTPException(
+                        status_code=502, detail="Failed to resolve X status"
+                    )
+                if media.mp4:
+                    logger.info(f"X video: {url} -> {media.mp4}")
+                    return RedirectResponse(media.mp4)
+                logger.info(f"X photos: {url} -> {len(media.photos)} images")
+                if len(media.photos) == 1:
+                    return await istream.get(url=media.photos[0])
+                return await istream.get_slideshow(
+                    urls=media.photos, duration=interval, loop_count=loop
+                )
             converted_url = await convert(url, p=p)
             logger.info(f"Video URL converted: {url} -> {converted_url}")
             return RedirectResponse(converted_url)

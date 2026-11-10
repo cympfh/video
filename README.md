@@ -35,7 +35,7 @@ Converts to VRChat-compatible format.
 ```
 https://s.cympfh.cc/video?url=https://x.com/pa_draws/status/1849228056537497835
 ```
-Proxies video content for VRChat playback.
+Proxies video content for VRChat playback. Posts without a video but with photos are shown as an image slideshow (a single photo becomes a still image).
 
 ### 🖼️ Images
 

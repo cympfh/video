@@ -1,12 +1,21 @@
 import math
 import re
 import urllib.parse
+from dataclasses import dataclass, field
 
 import httpx
 
 
+@dataclass
+class XMedia:
+    """A status resolved to its playable media."""
+
+    mp4: str | None = None
+    photos: list[str] = field(default_factory=list)
+
+
 class X:
-    """Resolve an X / Twitter status URL to a direct mp4, without nicovrc."""
+    """Resolve an X / Twitter status URL to a direct mp4 or photos, without nicovrc."""
 
     _STATUS_RE = re.compile(r"/status/(\d+)")
     _HOSTS = {
@@ -49,7 +58,32 @@ class X:
         candidates.sort(key=lambda item: item[0])
         return candidates[-1][1]
 
-    async def resolve_mp4(self, url: str) -> str:
+    def photos(self, payload: dict) -> list[str]:
+        """Collect photo URLs (large) from a syndication payload.
+
+        >>> x = X()
+        >>> x.photos({})
+        []
+        >>> x.photos({"mediaDetails": [{"type": "photo", "media_url_https": "https://pbs.twimg.com/media/a.jpg"}]})
+        ['https://pbs.twimg.com/media/a.jpg?name=large']
+        >>> payload = {"mediaDetails": [
+        ...     {"type": "video", "media_url_https": "https://pbs.twimg.com/media/thumb.jpg"},
+        ...     {"type": "photo", "media_url_https": "https://pbs.twimg.com/media/b.png"},
+        ... ]}
+        >>> x.photos(payload)
+        ['https://pbs.twimg.com/media/b.png?name=large']
+        """
+        photos: list[str] = []
+        for media in payload.get("mediaDetails") or []:
+            if media.get("type") != "photo":
+                continue
+            url = media.get("media_url_https")
+            if not url:
+                continue
+            photos.append(f"{url}?name=large")
+        return photos
+
+    async def _fetch_payload(self, url: str) -> dict:
         status_id = self.status_id(url)
         token = self.syndication_token(status_id)
         endpoint = "https://cdn.syndication.twimg.com/tweet-result"
@@ -57,9 +91,18 @@ class X:
         async with httpx.AsyncClient(follow_redirects=True) as client:
             response = await client.get(endpoint, params=params, timeout=8.0)
             response.raise_for_status()
-            payload = response.json()
+            return response.json()
 
-        mp4 = self.best_mp4(payload)
-        if not mp4:
-            raise LookupError(f"No mp4 on status {status_id}")
-        return mp4
+    async def resolve(self, url: str) -> XMedia:
+        """Fetch the status once and return both its video (if any) and photos."""
+        payload = await self._fetch_payload(url)
+        media = XMedia(mp4=self.best_mp4(payload), photos=self.photos(payload))
+        if media.mp4 is None and not media.photos:
+            raise LookupError(f"No media on status {self.status_id(url)}")
+        return media
+
+    async def resolve_mp4(self, url: str) -> str:
+        media = await self.resolve(url)
+        if not media.mp4:
+            raise LookupError(f"No mp4 on status {self.status_id(url)}")
+        return media.mp4
