@@ -1,4 +1,3 @@
-import json
 import re
 import urllib.parse
 
@@ -8,10 +7,10 @@ from util.trackinfo import TrackInfo
 
 
 class Bilibili:
-    """bilibili 動画のメタデータをページ HTML から取得する。API キー不要。
+    """bilibili 動画のメタデータを公開 API で取得する。API キー不要。
 
-    公開の view API はボット対策 (412) で弾かれることがあるため、
-    動画ページの og タグと __INITIAL_STATE__ を読む。
+    リスクコントロール (412) を避けるため、先にトップページを叩いて
+    buvid Cookie を取得してから view API を呼ぶ。
 
     >>> bili = Bilibili()
     >>> bili.is_video("https://www.bilibili.com/video/BV1smLczPEa5/")
@@ -28,15 +27,14 @@ class Bilibili:
 
     _HOSTS = {"bilibili.com", "www.bilibili.com", "m.bilibili.com"}
     _BV_RE = re.compile(r"^/video/(BV[0-9A-Za-z]+)")
-    _OG_TITLE_RE = re.compile(
-        r'<meta[^>]+(?:property|name)="og:title"[^>]+content="([^"]+)"'
-    )
-    _OG_IMAGE_RE = re.compile(
-        r'<meta[^>]+(?:property|name)="og:image"[^>]+content="([^"]+)"'
-    )
-    _TITLE_TAG_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.S)
-    _OWNER_RE = re.compile(r'"owner":\{"mid":\d+,"name":"((?:[^"\\]|\\.)*)"')
-    _TITLE_SUFFIX_RE = re.compile(r"_哔哩哔哩_bilibili\s*$")
+    _HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Referer": "https://www.bilibili.com/",
+    }
 
     def bvid(self, url: str) -> str | None:
         parsed = urllib.parse.urlparse(url)
@@ -53,40 +51,28 @@ class Bilibili:
         bvid = self.bvid(url)
         if not bvid:
             raise ValueError(f"Not a bilibili video URL: {url}")
-        page_url = f"https://www.bilibili.com/video/{bvid}"
         async with httpx.AsyncClient(
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/120.0.0.0 Safari/537.36"
-                ),
-                "Referer": "https://www.bilibili.com/",
-            },
-            follow_redirects=True,
+            headers=self._HEADERS, follow_redirects=True
         ) as client:
-            response = await client.get(page_url, timeout=15.0)
+            # buvid Cookie を得る (これが無いと view API は 412 を返す)
+            await client.get("https://www.bilibili.com/", timeout=15.0)
+            response = await client.get(
+                "https://api.bilibili.com/x/web-interface/view",
+                params={"bvid": bvid},
+                timeout=15.0,
+            )
             response.raise_for_status()
-        html = response.text
-
-        title = None
-        match = self._OG_TITLE_RE.search(html) or self._TITLE_TAG_RE.search(html)
-        if match:
-            title = self._TITLE_SUFFIX_RE.sub("", match.group(1)).strip()
+            payload = response.json()
+        if payload.get("code") != 0:
+            raise LookupError(f"No view info for video: {url}")
+        data = payload.get("data") or {}
+        title = data.get("title") or ""
         if not title:
             raise LookupError(f"No title on video: {url}")
-
-        artwork = None
-        match = self._OG_IMAGE_RE.search(html)
-        if match:
-            artwork = match.group(1)
-
-        artist = ""
-        match = self._OWNER_RE.search(html)
-        if match:
-            try:
-                artist = json.loads(f'"{match.group(1)}"')
-            except json.JSONDecodeError:
-                artist = match.group(1)
-
-        return TrackInfo(url=page_url, title=title, artist=artist, artwork_url=artwork)
+        artwork = (data.get("pic") or "").replace("http://", "https://", 1)
+        return TrackInfo(
+            url=f"https://www.bilibili.com/video/{bvid}",
+            title=title,
+            artist=(data.get("owner") or {}).get("name") or "",
+            artwork_url=artwork or None,
+        )
