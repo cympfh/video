@@ -1,7 +1,7 @@
 """Public helpers. Call sites keep using ``util.X``, ``util.Hanime``, and the rest."""
 
 from util.random import Random, RandomLive
-from util.sites import Hanime, SoundCloud, X, YouTube
+from util.sites import Hanime, SoundCloud, SoundCloudTrack, X, YouTube
 from util.streaming import ImageStream
 
 __all__ = [
@@ -10,6 +10,7 @@ __all__ = [
     "Random",
     "RandomLive",
     "SoundCloud",
+    "SoundCloudTrack",
     "X",
     "YouTube",
 ]

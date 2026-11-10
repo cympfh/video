@@ -9,6 +9,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Added
 
 - SoundCloud track URLs resolve to their HLS audio stream via the public api-v2 (client_id is scraped from soundcloud.com and refreshed on 401/403). Public tracks only; playlists and profiles are passed through unchanged.
+- `/video/info?url=...` serves track metadata (title, artist, artwork URL) and `/video/thumbnail?url=...` relays the 500px artwork image, for SoundCloud tracks. Both unwrap `https://s.cympfh.cc/video?url=...` URLs.
+- `yamaplayer/TrackInfoLoader.cs`: drop-in YamaPlayer module that shows track titles (and optional artwork) for tracks played through this server.
 
 ### Added
 

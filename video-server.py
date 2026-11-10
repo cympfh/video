@@ -3,7 +3,7 @@ import mimetypes
 import os
 from pathlib import Path
 from enum import Enum
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
@@ -366,6 +366,103 @@ async def convert(url: str, p: int | None = None) -> str:
 
     # それ以外はそのまま返す
     return url
+
+
+def unwrap_wrapped_url(url: str, our_hosts: set[str]) -> str:
+    """``/video?url=<inner>`` でラップされた URL から内側の URL を取り出す。
+
+    YamaPlayer などに入力された URL はこのサーバーの URL になっている。
+    info / thumbnail エンドポイントでは元の URL を知りたいので、
+    自分自身の URL なら ``url`` クエリを1段だけほぐす。
+
+    Examples
+    --------
+    >>> unwrap_wrapped_url(
+    ...     "https://s.cympfh.cc/video?url=https%3A%2F%2Fsoundcloud.com%2Fa%2Fb",
+    ...     {"s.cympfh.cc"},
+    ... )
+    'https://soundcloud.com/a/b'
+    >>> unwrap_wrapped_url("https://soundcloud.com/a/b", {"s.cympfh.cc"})
+    'https://soundcloud.com/a/b'
+    >>> unwrap_wrapped_url("https://evil.example/video?url=https%3A%2F%2Fx", {"s.cympfh.cc"})
+    'https://evil.example/video?url=https%3A%2F%2Fx'
+    """
+    parsed = urlparse(url)
+    if parsed.hostname and parsed.hostname.lower() in our_hosts and parsed.path in (
+        "",
+        "/",
+        "/video",
+    ):
+        inner = parse_qs(parsed.query).get("url")
+        if inner and inner[0].startswith(("http://", "https://")):
+            return inner[0]
+    return url
+
+
+async def resolve_track_info(url: str) -> util.SoundCloudTrack:
+    """URL をトラック情報に解決する。対応していないサイトは 404"""
+    sc = util.SoundCloud()
+    if sc.is_track(url):
+        try:
+            return await sc.resolve_track(url)
+        except (LookupError, httpx.HTTPError, ValueError) as e:
+            logger.warning(f"Failed to resolve track info: {url}: {e}")
+            raise HTTPException(status_code=502, detail="Failed to resolve track info")
+    raise HTTPException(status_code=404, detail="Unsupported URL")
+
+
+def _info_hosts(request: Request) -> set[str]:
+    hosts = {"s.cympfh.cc", "localhost", "127.0.0.1"}
+    if request.url.hostname:
+        hosts.add(request.url.hostname.lower())
+    public = urlparse(configured_public_base()).hostname
+    if public:
+        hosts.add(public.lower())
+    return hosts
+
+
+@app.get("/video/info")
+async def track_info(request: Request, url: str = Query(...)):
+    """トラックのタイトル・アーティスト・アートワーク URL を JSON で返す
+
+    YamaPlayer のタイトル表示など、プレイヤー側からの参照を想定。
+    """
+    inner = unwrap_wrapped_url(url, _info_hosts(request))
+    track = await resolve_track_info(inner)
+    return {
+        "url": track.url,
+        "title": track.display_title,
+        "track": track.title,
+        "artist": track.artist,
+        "artwork": track.artwork(),
+    }
+
+
+@app.get("/video/thumbnail")
+async def track_thumbnail(request: Request, url: str = Query(...)):
+    """トラックのアートワーク画像 (500px) を中継する"""
+    inner = unwrap_wrapped_url(url, _info_hosts(request))
+    track = await resolve_track_info(inner)
+    artwork = track.artwork()
+    if not artwork:
+        raise HTTPException(status_code=404, detail="No artwork on track")
+    async with httpx.AsyncClient(
+        headers={"User-Agent": "Mozilla/5.0"}, follow_redirects=True
+    ) as client:
+        try:
+            upstream = await client.get(artwork, timeout=15.0)
+            upstream.raise_for_status()
+        except httpx.HTTPError as e:
+            logger.warning(f"Failed to fetch artwork: {artwork}: {e}")
+            raise HTTPException(status_code=502, detail="Failed to fetch artwork")
+        content_type = upstream.headers.get("content-type", "image/jpeg")
+        if not content_type.startswith("image/"):
+            raise HTTPException(status_code=502, detail="Failed to fetch artwork")
+        return Response(
+            content=upstream.content,
+            media_type=content_type,
+            headers={"cache-control": "public, max-age=86400"},
+        )
 
 
 @app.api_route(

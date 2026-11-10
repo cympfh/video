@@ -41,6 +41,17 @@ https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood
 ```
 公開トラックを HLS の音声ストリームに解決します。APIキーは不要です。プレイリスト・プロフィールは非対応です。
 
+プレイヤーやワールドスクリプト向けに、トラックのメタデータも配信します:
+
+```
+https://s.cympfh.cc/video/info?url={トラックまたはラップ済みURL}       # タイトル / アーティスト / アートワークURL (JSON)
+https://s.cympfh.cc/video/thumbnail?url={トラックまたはラップ済みURL}  # 500px のアートワーク画像
+```
+
+どちらも SoundCloud のトラック URL と、`https://s.cympfh.cc/video?url=...` でラップ済みの URL の両方を受け付けます。
+YamaPlayer 向けには、トラックのタイトル（と任意でアートワーク）を表示するドロップイン モジュール
+`yamaplayer/TrackInfoLoader.cs` があります。`yamaplayer/README.md` を参照してください。
+
 ### 🖼️ 画像
 
 **単一画像:**

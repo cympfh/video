@@ -43,6 +43,17 @@ https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood
 ```
 Resolves public tracks to their HLS audio stream. No API key needed. Playlists and profiles are not supported.
 
+Track metadata is available for players and world scripts:
+
+```
+https://s.cympfh.cc/video/info?url={TRACK_OR_WRAPPED_URL}       # title / artist / artwork URL (JSON)
+https://s.cympfh.cc/video/thumbnail?url={TRACK_OR_WRAPPED_URL}  # 500px artwork image
+```
+
+Both accept either a SoundCloud track URL or a URL already wrapped in `https://s.cympfh.cc/video?url=...`.
+For YamaPlayer, `yamaplayer/TrackInfoLoader.cs` is a drop-in module that shows the track title
+(and the artwork on an optional Renderer); see `yamaplayer/README.md`.
+
 ### 🖼️ Images
 
 **Single Image:**
