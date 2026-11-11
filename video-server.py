@@ -65,7 +65,14 @@ class UrlType(Enum):
 
     @classmethod
     async def from_url(cls, url: str) -> "UrlType":
-        """URL種別を判定する"""
+        """URL種別を判定する
+
+        >>> import asyncio
+        >>> asyncio.run(UrlType.from_url("https://soundcloud.com/forss/flickermood"))
+        <UrlType.Video: 'video'>
+        >>> asyncio.run(UrlType.from_url("https://example.com/a.png"))
+        <UrlType.Image: 'image'>
+        """
         # Prefer random-live over random (longer alias first)
         if url.startswith("random-live") or (
             url.startswith("random-") and "random-live".startswith(url)
@@ -81,6 +88,10 @@ class UrlType(Enum):
         # Invalid URL
         if not url.startswith(("http://", "https://")):
             raise HTTPException(status_code=400, detail="Invalid URL")
+
+        # SoundCloud のトラックは画像ではない。HEAD を省いて最初のセグメントを早める
+        if util.SoundCloud().is_track(url):
+            return cls.Video
 
         # 画像?
         if url.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
@@ -150,6 +161,7 @@ async def root(
     interval: int = Query(8, ge=1, le=30),
     loop: int = Query(100, ge=1),
     p: int | None = Query(None, ge=1),
+    audio: bool = Query(False),
 ):
     """Redirect API
 
@@ -164,6 +176,8 @@ async def root(
         スライドショーのループ回数（デフォルト: 100）
     p
         ビリビリ動画のページ番号（シリーズの何本目か、1始まり）
+    audio
+        SoundCloud を音だけの HLS にリダイレクトする（既定はアートワーク付きの映像）
     """
     if not url:
         return index_page()
@@ -212,6 +226,11 @@ async def root(
                 return await istream.get_slideshow(
                     urls=media.photos, duration=interval, loop_count=loop
                 )
+            # SoundCloud はアートワークの静止画に音を重ねた HLS にする。
+            # ?audio=1 なら従来どおり音だけの HLS へリダイレクト (convert)
+            sc = util.SoundCloud()
+            if sc.is_track(url) and not audio:
+                return await soundcloud_video(url)
             converted_url = await convert(url, p=p)
             logger.info(f"Video URL converted: {url} -> {converted_url}")
             return RedirectResponse(converted_url)
@@ -270,10 +289,41 @@ async def video(
     interval: int = Query(8, ge=1, le=30),
     loop: int = Query(100, ge=1),
     p: int | None = Query(None, ge=1),
+    audio: bool = Query(False),
 ):
     if not url:
         return index_page()
-    return await root(request, url, interval, loop, p)
+    return await root(request, url, interval, loop, p, audio)
+
+
+async def soundcloud_video(url: str):
+    """SoundCloud トラックを、アートワーク + 音声 の HLS (h264 + aac) で返す"""
+    key = url.split("?")[0].split("#")[0].rstrip("/")
+    # 同じトラックの同時リクエストは 1 本の ffmpeg を待ち合わせる
+    async with istream.audio_lock(key):
+        return await _soundcloud_video_locked(url, key)
+
+
+async def _soundcloud_video_locked(url: str, key: str):
+    cached = await istream.cached_audio_stream(key)
+    if cached is not None:
+        return cached
+    try:
+        track = await util.SoundCloud().resolve(url)
+    except (LookupError, httpx.HTTPError, ValueError) as e:
+        logger.warning(f"Failed to resolve SoundCloud track: {url}: {e}")
+        raise HTTPException(
+            status_code=502, detail="Failed to resolve SoundCloud track"
+        )
+    logger.info(
+        f"SoundCloud video: {url} ({track.duration}s, artwork={track.artwork_url})"
+    )
+    return await istream.get_with_audio(
+        key=key,
+        audio_url=track.stream_url,
+        artwork_url=track.artwork_url,
+        duration=track.duration,
+    )
 
 
 async def convert(url: str, p: int | None = None) -> str:
@@ -657,6 +707,67 @@ def _stream_content_types() -> tuple[str, str, str, str]:
             playlist.headers["content-type"],
             image.headers["content-type"],
             video.headers["content-type"],
+        )
+    finally:
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+@app.get(f"/video/stream/{{stream_key}}/{util.ImageStream.EVENT_PLAYLIST}")
+async def event_playlist(stream_key: str):
+    """音声つきストリーム (SoundCloud) のプレイリスト
+
+    ffmpeg が書く ``index.m3u8`` に ``#EXT-X-START`` を足して返す。
+    セグメントは相対パスなので、従来どおり下の StaticFiles から配る。
+    """
+    if not (len(stream_key) == 64 and all(c in "0123456789abcdef" for c in stream_key)):
+        raise HTTPException(status_code=404, detail="Not Found")
+    path = Path("stream") / stream_key / "index.m3u8"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Not Found")
+    return Response(
+        content=util.ImageStream.with_start_at_beginning(text),
+        media_type="application/vnd.apple.mpegurl",
+        headers={"cache-control": "no-cache"},
+    )
+
+
+def _event_playlist_response() -> tuple[int, str, str, int]:
+    """``start.m3u8`` が index.m3u8 に EXT-X-START を足して返すこと
+
+    Examples
+    --------
+    >>> status, ctype, first_lines, missing = _event_playlist_response()
+    >>> status, ctype
+    (200, 'application/vnd.apple.mpegurl')
+    >>> print(first_lines)
+    #EXTM3U
+    #EXT-X-START:TIME-OFFSET=0,PRECISE=YES
+    #EXT-X-PLAYLIST-TYPE:EVENT
+    >>> missing
+    404
+    """
+    import shutil
+
+    from fastapi.testclient import TestClient
+
+    key = "f" * 63 + "0"
+    directory = Path("stream") / key
+    directory.mkdir(parents=True, exist_ok=True)
+    try:
+        (directory / "index.m3u8").write_text(
+            "#EXTM3U\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXTINF:4.0,\nseg_00000.ts\n",
+            encoding="utf-8",
+        )
+        with TestClient(app) as client:
+            ok = client.get(f"/video/stream/{key}/start.m3u8")
+            missing = client.get(f"/video/stream/{'e' * 64}/start.m3u8")
+        return (
+            ok.status_code,
+            ok.headers["content-type"],
+            "\n".join(ok.text.splitlines()[:3]),
+            missing.status_code,
         )
     finally:
         shutil.rmtree(directory, ignore_errors=True)

@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- SoundCloud tracks play as video by default: the track artwork as a still 16:9 frame (blurred background, black without artwork) with the audio, as h264 + aac HLS encoded faster than real time. The redirect happens once the first 4-second segment exists, and the playlist carries `#EXT-X-START:TIME-OFFSET=0` so late joiners also start from the beginning. `&audio=1` keeps the old audio-only redirect.
+
+### Added
+
 - SoundCloud track URLs resolve to their HLS audio stream via the public api-v2 (client_id is scraped from soundcloud.com and refreshed on 401/403). Public tracks only; playlists and profiles are passed through unchanged.
 
 ### Added

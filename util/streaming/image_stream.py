@@ -12,6 +12,9 @@ from pathlib import Path
 import httpx
 from fastapi import HTTPException
 from fastapi.responses import RedirectResponse
+from starlette.concurrency import run_in_threadpool
+
+from util.streaming.artwork import compose_frame_png
 
 logger = logging.getLogger("uvicorn")
 
@@ -22,6 +25,10 @@ class ImageStream:
     BASE_DIR = Path("stream")
 
     processes = {}  # stream_key -> {'process': Popen, 'last_access': float}
+
+    # 音声つきストリームはこの名前でリダイレクトする (先頭から再生させる)
+    EVENT_PLAYLIST = "start.m3u8"
+    _audio_locks: dict[str, asyncio.Lock] = {}  # key -> 同じトラックの同時作成を防ぐ
 
     def __init___(self):
         os.makedirs(str(self.BASE_DIR), exist_ok=True)
@@ -235,6 +242,276 @@ class ImageStream:
         self.processes[stream_key] = {"process": process, "last_access": time.time()}
         logger.info(f"FFmpeg slideshow process started with PID: {process.pid}")
         return process
+
+    @staticmethod
+    def audio_stream_command(
+        frame_path: str,
+        audio_url: str,
+        outdir: str | Path,
+        duration: float | None = None,
+        fps: int = 8,
+    ) -> list[str]:
+        """静止画 + 音声 を HLS (h264 + aac) にする ffmpeg コマンド
+
+        静止画は ``-loop 1`` で流し続け、音が終わったところで止める
+        (``-shortest``、長さが分かっていれば ``-t`` でも頭打ち)。
+        ``-re`` は付けない: 実時間より速くエンコードして先にセグメントを作り、
+        プレイリストは EVENT 型で先頭から全部残す (終わると ENDLIST が付く)。
+
+        Examples
+        --------
+        >>> cmd = ImageStream.audio_stream_command(
+        ...     "stream/k/frame.png", "https://cf-hls-media.sndcdn.com/x.m3u8", "stream/k", 213.886)
+        >>> cmd[:7]
+        ['ffmpeg', '-y', '-loop', '1', '-framerate', '8', '-i']
+        >>> cmd[cmd.index("-map") + 1], cmd[cmd.index("-map") + 3]
+        ('0:v:0', '1:a:0')
+        >>> [cmd[cmd.index(k) + 1] for k in ("-c:v", "-tune", "-c:a", "-t", "-hls_playlist_type")]
+        ['libx264', 'stillimage', 'aac', '214.886', 'event']
+        >>> "-shortest" in cmd and "-re" not in cmd and "-an" not in cmd
+        True
+        >>> cmd[-1]
+        'stream/k/index.m3u8'
+        >>> "-t" in ImageStream.audio_stream_command("f.png", "a.m3u8", "o")
+        False
+        """
+        outdir = Path(outdir)
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-loop",
+            "1",
+            "-framerate",
+            str(fps),
+            "-i",
+            str(frame_path),
+            "-i",
+            audio_url,
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-vf",
+            "format=yuv420p",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "ultrafast",
+            "-tune",
+            "stillimage",
+            "-crf",
+            "30",
+            "-r",
+            str(fps),
+            "-g",
+            str(fps * 4),
+            "-keyint_min",
+            str(fps * 4),
+            "-sc_threshold",
+            "0",
+            "-force_key_frames",
+            "expr:gte(t,n_forced*4)",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            "-ar",
+            "44100",
+            "-ac",
+            "2",
+            "-shortest",
+        ]
+        if duration:
+            # 余白 1 秒。音が先に終われば -shortest で止まる
+            cmd += ["-t", f"{duration + 1:.3f}"]
+        cmd += [
+            "-f",
+            "hls",
+            "-hls_time",
+            "4",
+            "-hls_list_size",
+            "0",
+            "-hls_playlist_type",
+            "event",
+            "-hls_flags",
+            "independent_segments+temp_file",
+            "-hls_segment_filename",
+            str(outdir / "seg_%05d.ts"),
+            str(outdir / "index.m3u8"),
+        ]
+        return cmd
+
+    def stream_with_audio(
+        self,
+        frame_path: str,
+        audio_url: str,
+        stream_key: str,
+        duration: float | None = None,
+    ):
+        """静止画 + 音声 の HLS ストリームを開始する"""
+        outdir = self.BASE_DIR / stream_key
+        os.makedirs(str(outdir), exist_ok=True)
+        cmd = self.audio_stream_command(frame_path, audio_url, outdir, duration)
+        logger.info(f"Starting HLS audio+still stream: {stream_key}")
+        # ログは配信ディレクトリの外に置く (署名付きの音声 URL が載るので)
+        log = open(Path(tempfile.gettempdir()) / f"ffmpeg-{stream_key}.log", "wb")
+        process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=log)
+        log.close()
+        self.processes[stream_key] = {"process": process, "last_access": time.time()}
+        logger.info(f"FFmpeg audio+still process started with PID: {process.pid}")
+        return process
+
+    def audio_lock(self, key: str) -> asyncio.Lock:
+        """同じトラックへの同時リクエストで ffmpeg を二重に起動しないためのロック
+
+        >>> s = ImageStream()
+        >>> s.audio_lock("a") is s.audio_lock("a"), s.audio_lock("a") is s.audio_lock("b")
+        (True, False)
+        """
+        return self._audio_locks.setdefault(self.audio_stream_key(key), asyncio.Lock())
+
+    @staticmethod
+    def audio_stream_key(key: str) -> str:
+        """音声つきストリームのディレクトリ名
+
+        >>> ImageStream.audio_stream_key("https://soundcloud.com/forss/flickermood")[:12]
+        'b3b27cabc573'
+        """
+        return hashlib.sha256(f"audio-still|{key}".encode()).hexdigest()
+
+    async def cached_audio_stream(
+        self, key: str, timeout: float = 30.0
+    ) -> RedirectResponse | None:
+        """作成済み (または作成中) の音声つきストリームがあればそこへリダイレクトする
+
+        署名付きの音声 URL を取り直さずに済むよう、解決より先に呼べる。
+        途中で止まったもの (再起動など、ENDLIST が無く ffmpeg もいない) は消して None。
+        """
+        stream_key = self.audio_stream_key(key)
+        # index.m3u8 に EXT-X-START を足したもの (video-server.py の event_playlist)
+        location = f"/video/stream/{stream_key}/{self.EVENT_PLAYLIST}"
+        outdir = self.BASE_DIR / stream_key
+        playlist = outdir / "index.m3u8"
+
+        running = self.processes.get(stream_key)
+        alive = running is not None and running["process"].poll() is None
+        if not alive and playlist.exists():
+            if "#EXT-X-ENDLIST" not in playlist.read_text(
+                encoding="utf-8", errors="replace"
+            ):
+                logger.info(f"Discarding unfinished audio+still stream: {stream_key}")
+                shutil.rmtree(outdir, ignore_errors=True)
+                self.processes.pop(stream_key, None)
+                return None
+        if not (playlist.exists() or alive):
+            return None
+        logger.info(f"Cache hit for audio+still stream: {stream_key}")
+        if running:
+            running["last_access"] = time.time()
+        await self._wait_for_playlist(stream_key, timeout)
+        return RedirectResponse(url=location, status_code=302)
+
+    async def get_with_audio(
+        self,
+        key: str,
+        audio_url: str,
+        artwork_url: str | None,
+        duration: float | None = None,
+        timeout: float = 30.0,
+    ) -> RedirectResponse:
+        """アートワークの静止画に音声を重ねた HLS を作ってリダイレクトする
+
+        Parameters
+        ----------
+        key
+            キャッシュキーの元 (トラック URL など)。音声 URL は署名付きで毎回変わるので使わない
+        audio_url
+            ffmpeg が読める音声 (HLS m3u8 など)
+        artwork_url
+            静止画にする絵。None か取得失敗なら黒背景
+        duration
+            音声の長さ(秒)。分かれば ``-t`` の上限にする
+        timeout
+            最初のセグメントを待つ秒数
+        """
+        cached = await self.cached_audio_stream(key, timeout)
+        if cached is not None:
+            return cached
+        stream_key = self.audio_stream_key(key)
+        location = f"/video/stream/{stream_key}/{self.EVENT_PLAYLIST}"
+        outdir = self.BASE_DIR / stream_key
+
+        artwork = None
+        if artwork_url:
+            try:
+                async with httpx.AsyncClient(
+                    headers={"user-agent": "curl/7.54.1"}, follow_redirects=True
+                ) as client:
+                    response = await client.get(artwork_url, timeout=5.0)
+                    response.raise_for_status()
+                    artwork = response.content
+            except httpx.HTTPError as e:
+                logger.warning(f"Artwork unavailable, using black: {artwork_url}: {e}")
+        else:
+            logger.info("No artwork, using black background")
+
+        os.makedirs(str(outdir), exist_ok=True)
+        frame_path = outdir / "frame.png"
+        png = await run_in_threadpool(compose_frame_png, artwork)
+        frame_path.write_bytes(png)
+
+        self._cleanup_old_processes()
+        self.stream_with_audio(str(frame_path), audio_url, stream_key, duration)
+        await self._wait_for_playlist(stream_key, timeout)
+        logger.info(f"Audio+still stream ready, redirecting to: {location}")
+        return RedirectResponse(url=location, status_code=302)
+
+    @staticmethod
+    def with_start_at_beginning(playlist: str) -> str:
+        r"""EVENT プレイリストに ``#EXT-X-START:TIME-OFFSET=0`` を足す
+
+        EVENT 型は ENDLIST が付くまでライブ扱いなので、プレイヤーによっては
+        後から来た人が「今の端」から再生してしまう。先頭から再生させる。
+
+        >>> src = "#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-PLAYLIST-TYPE:EVENT\n#EXTINF:4.0,\nseg_00000.ts\n"
+        >>> print(ImageStream.with_start_at_beginning(src), end="")
+        #EXTM3U
+        #EXT-X-START:TIME-OFFSET=0,PRECISE=YES
+        #EXT-X-VERSION:6
+        #EXT-X-PLAYLIST-TYPE:EVENT
+        #EXTINF:4.0,
+        seg_00000.ts
+        >>> again = ImageStream.with_start_at_beginning(src)
+        >>> ImageStream.with_start_at_beginning(again) == again
+        True
+        >>> ImageStream.with_start_at_beginning("")
+        ''
+        """
+        if not playlist.startswith("#EXTM3U") or "#EXT-X-START:" in playlist:
+            return playlist
+        head, _, rest = playlist.partition("\n")
+        return f"{head}\n#EXT-X-START:TIME-OFFSET=0,PRECISE=YES\n{rest}"
+
+    async def _wait_for_playlist(self, stream_key: str, timeout: float) -> None:
+        """最初のセグメントがプレイリストに載るまで待つ。ffmpeg が落ちたら 502"""
+        playlist = self.BASE_DIR / stream_key / "index.m3u8"
+        deadline = time.monotonic() + timeout
+        while True:
+            info = self.processes.get(stream_key)
+            exited = info is not None and info["process"].poll() is not None
+            try:
+                if "#EXTINF" in playlist.read_text(encoding="utf-8"):
+                    return
+            except (FileNotFoundError, UnicodeDecodeError):
+                pass
+            if exited:
+                logger.error(f"ffmpeg failed for stream: {stream_key}")
+                shutil.rmtree(self.BASE_DIR / stream_key, ignore_errors=True)
+                del self.processes[stream_key]
+                raise HTTPException(status_code=502, detail="Failed to build stream")
+            if time.monotonic() > deadline:
+                raise HTTPException(status_code=504, detail="Stream did not start")
+            await asyncio.sleep(0.1)
 
     async def get(
         self, path: str | None = None, url: str | None = None
