@@ -32,6 +32,30 @@ CIRCLE_RING = (176, 262)
 CIRCLE_WAVE_SIZE = (720, 86)
 # spectrum: バーの本数
 SPECTRUM_BARS = 64
+# 帯の高さと強さ。音圧の高い曲でもバーや波形が帯の上端で切れないように選んだ
+# (flickermood と Pegboard Nerds - Disconnected で上端に当たるコマが 1% 以下)
+WAVE_HEIGHT = 200
+WAVE_GAIN = 0.65
+SPECTRUM_HEIGHT = 216  # 画面の下 4 割
+SPECTRUM_GAIN = 10
+# volume: RMS の -VOLUME_RANGE_DB..0 dB を高さいっぱいに割り当てる。
+# -6 dB 以上で赤、-18 dB 以上で黄、それ未満は緑
+VOLUME_RANGE_DB = 36
+VOLUME_RED_DB = -6
+VOLUME_YELLOW_DB = -18
+
+
+def _volume_position(db: float) -> float:
+    """showvolume の ``ds=log`` で dB が何割の高さになるか (``0.21 * log10(x) + 1``)
+
+    >>> _volume_position(0), round(_volume_position(-36), 3)
+    (1.0, 0.622)
+    """
+    return 1 + 0.21 * db / 20
+
+
+# wave / spectrum の不透明度 (濃さ)。サムネが少し透けて見えるよう 0.7
+OVERLAY_OPACITY = 0.7
 
 
 def parse_effect(value: str | None) -> str | None:
@@ -64,7 +88,7 @@ def effect_filtergraph(
     Examples
     --------
     >>> g = effect_filtergraph("wave")
-    >>> "[1:a]showwaves=s=960x140" in g and g.endswith("format=yuv420p[v]")
+    >>> "[1:a]volume=0.65,showwaves=s=960x200" in g and g.endswith("format=yuv420p[v]")
     True
 
     白一色ではなく、虹色の帯を形で切り抜いて光らせる
@@ -72,13 +96,24 @@ def effect_filtergraph(
     >>> all("alphamerge" in effect_filtergraph(e) and _GLOW in effect_filtergraph(e)
     ...     for e in ("wave", "spectrum", "circle"))
     True
+
+    wave と spectrum はサムネが透けるよう OVERLAY_OPACITY を掛ける (circle は掛けない)
+
+    >>> [_FADE in effect_filtergraph(e) for e in EFFECTS]
+    [True, True, False, False]
+    >>> _FADE
+    'colorchannelmixer=aa=0.7'
+
     >>> g = effect_filtergraph("spectrum")
     >>> "showcqt" in g and "a_weighting(f)" in g and "colorkey" not in g
     True
     >>> g = effect_filtergraph("circle")
     >>> "[2:v]" in g and "[3:v]" in g and "remap" in g and "hflip" in g
     True
-    >>> "showvolume" in effect_filtergraph("volume")
+    >>> g = effect_filtergraph("volume")
+    >>> "showvolume" in g and ":m=r:ds=log:" in g and "crop=iw:460:0:0" in g
+    True
+    >>> "if(gte(PEAK,0.9370)" in g and "if(gte(PEAK,0.8110)" in g
     True
     >>> all(f"r={EFFECT_FPS}" in effect_filtergraph(e) for e in EFFECTS)
     True
@@ -90,16 +125,17 @@ def effect_filtergraph(
     effect = parse_effect(effect)
     width, height = size
     if effect == "wave":
-        h = 140
+        h = WAVE_HEIGHT
+        # 音を WAVE_GAIN 倍してから描く (sqrt 目盛でも帯の上下に当たらない)
         return (
-            f"[1:a]showwaves=s={width}x{h}:mode=cline:r={fps}:scale=sqrt:draw=full"
+            f"[1:a]volume={WAVE_GAIN},showwaves=s={width}x{h}:mode=cline:r={fps}:scale=sqrt:draw=full"
             f":colors=white,format=rgba,alphaextract[m];"
             f"{_rainbow(width, h, fps)}[c];"
-            f"[c][m]alphamerge,{_GLOW}[fx];"
+            f"[c][m]alphamerge,{_GLOW},{_FADE}[fx];"
             f"[0:v][fx]overlay=0:{height - h - 8}:format=auto,format=yuv420p[v]"
         )
     if effect == "spectrum":
-        h = 160
+        h = SPECTRUM_HEIGHT
         bars = SPECTRUM_BARS
         step = width // bars
         # showcqt の明るさを帯ごとに平均して二値にし、ブロックのバーにする。
@@ -107,17 +143,17 @@ def effect_filtergraph(
         # 色はバーの位置 (低音=赤 → 高音=紫) で決める
         return (
             f"[1:a]showcqt=s={width}x{h}:r={fps}:bar_h={h}:sono_h=0:axis=0"
-            f":bar_g=2:bar_v=48*sqrt(a_weighting(f)):count=2"
+            f":bar_g=2:bar_v={SPECTRUM_GAIN}*sqrt(a_weighting(f)):count=2"
             f":basefreq=30:endfreq=8000,"
             f"format=gray,scale={bars}x{h}:flags=area,"
-            f"lut=y='if(gt(val,10),255,0)',"
+            f"lut=y='if(gt(val,25),255,0)',"
             f"scale={width}x{h}:flags=neighbor[bars];"
             f"nullsrc=s={width}x{h}:r={fps},format=gray,"
             f"geq=lum='if(lt(mod(X,{step}),{step - 3})*lt(mod(Y,8),6),255,0)',"
             f"loop=loop=-1:size=1[grid];"
             f"[bars][grid]blend=all_mode=multiply[m];"
-            f"{_rainbow(width, h, fps, period=0)}[c];"
-            f"[c][m]alphamerge,{_GLOW}[fx];"
+            f"{_rainbow(width, h, fps, period=0, span=5)}[c];"
+            f"[c][m]alphamerge,{_GLOW},{_FADE}[fx];"
             f"[0:v][fx]overlay=0:{height - h}:format=auto,format=yuv420p[v]"
         )
     if effect == "circle":
@@ -133,10 +169,21 @@ def effect_filtergraph(
             f"[0:v][fx]overlay={(width - side) // 2}:{(height - side) // 2}"
             f":format=auto,format=yuv420p[v]"
         )
-    # volume
+    # volume: 音圧 (RMS) を dB で。showvolume の ds=log は約 95 dB を高さに詰めるので
+    # 曲だとほぼ上まで届いてしまう。上から VOLUME_RANGE_DB 分だけ切り出して使う。
+    # 色の式の PEAK はその画素の高さ (0..1) なので、閾値も高さに直して塗り分ける
     meter = height - 80
+    bottom = _volume_position(-VOLUME_RANGE_DB)
+    full = round(meter / (1 - bottom))
+    red = _volume_position(VOLUME_RED_DB)
+    yellow = _volume_position(VOLUME_YELLOW_DB)
+    color = (
+        f"if(gte(PEAK,{red:.4f}),0xff0000ff,"
+        f"if(gte(PEAK,{yellow:.4f}),0xff00ffff,0xff00ff00))"
+    )
     return (
-        f"[1:a]showvolume=r={fps}:o=v:w={meter}:h=14:b=2:t=0:v=0:f=0.9:p=0,"
+        f"[1:a]showvolume=r={fps}:o=v:w={full}:h=14:b=2:t=0:v=0:f=0.9:p=0"
+        f":m=r:ds=log:c='{color}',crop=iw:{meter}:0:0,"
         f"format=rgba,colorchannelmixer=aa=0.85[fx];"
         f"[0:v][fx]overlay=W-w-24:(H-h)/2:format=auto,format=yuv420p[v]"
     )
@@ -149,8 +196,14 @@ _GLOW = (
 )
 
 
-def _rainbow(width: int, height: int, fps: int, period: float = 6) -> str:
-    """横方向に色相が一周する虹色の帯 (彩度・明度は最大)
+# 光らせたあと全体の不透明度を OVERLAY_OPACITY 倍にする
+_FADE = f"colorchannelmixer=aa={OVERLAY_OPACITY}"
+
+
+def _rainbow(
+    width: int, height: int, fps: int, period: float = 6, span: float = 6
+) -> str:
+    """横方向に色相が変わる虹色の帯 (彩度・明度は最大)。``span`` 6 で一周、5 で赤から紫まで
 
     1 枚だけ ``geq`` で作って ``loop`` で使い回す。``period`` 秒で色相が一周して流れる
     (0 なら止まったまま)。
@@ -160,8 +213,10 @@ def _rainbow(width: int, height: int, fps: int, period: float = 6) -> str:
     True
     >>> "hue=H=" in g, "hue=H=" in _rainbow(960, 140, 15, period=0)
     (True, False)
+    >>> "5*X/960" in _rainbow(960, 140, 15, span=5)  # 赤から紫まで (一周しない)
+    True
     """
-    hue = f"6*X/{width}"
+    hue = f"{span:g}*X/{width}"
     graph = (
         f"nullsrc=s={width}x{height}:r={fps},format=rgb24,"
         f"geq=r='255*clip(abs({hue}-3)-1,0,1)'"

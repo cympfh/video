@@ -46,10 +46,10 @@ https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood
 | `effect` | 見た目 |
 |---|---|
 | （なし） | 上のとおりアートワークだけ |
-| `wave` | 画面の下に光る虹色の波形（色がゆっくり流れる） |
-| `spectrum` | 画面の下に光るブロックのバー（左の低音が赤、右の高音が紫） |
+| `wave` | 画面の下に光る虹色の波形（色がゆっくり流れる、サムネが少し透ける） |
+| `spectrum` | 画面の下に光るブロックのバー（左の低音が赤、右の高音が紫、サムネが少し透ける） |
 | `circle` | アートワークを円く切り抜き、まわりを光る虹色の波形の輪が囲む |
-| `volume` | 右端に左右の音量メーター |
+| `volume` | 右端に左右の音量メーター（ふだんは緑、大きめで黄、いちばん大きいときだけ赤） |
 
 ```
 https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood&effect=circle

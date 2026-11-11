@@ -48,10 +48,10 @@ Add `&effect=` to draw something that moves with the music on top of the artwork
 | `effect` | Looks like |
 |---|---|
 | (none) | Artwork only, as above |
-| `wave` | A glowing rainbow waveform across the bottom of the frame, its colors slowly flowing |
-| `spectrum` | Glowing block bars along the bottom, bass in red on the left to treble in purple on the right |
+| `wave` | A glowing rainbow waveform across the bottom of the frame, its colors slowly flowing; the artwork shows through a little |
+| `spectrum` | Glowing block bars along the bottom, bass in red on the left to treble in purple on the right; the artwork shows through a little |
 | `circle` | The artwork cut into a circle, with a glowing rainbow waveform ring around it |
-| `volume` | Left/right level meters at the right edge |
+| `volume` | Left/right loudness meters at the right edge: green, yellow near loud, red only at the loudest |
 
 ```
 https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood&effect=circle
