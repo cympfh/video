@@ -47,7 +47,7 @@ Add `&effect=` to draw something that moves with the music on top of the artwork
 
 | `effect` | Looks like |
 |---|---|
-| (none) | Artwork only, as above |
+| (none), empty, or `off` | Artwork only, as above |
 | `wave` | A glowing rainbow waveform across the bottom of the frame, its colors slowly flowing; the artwork shows through a little |
 | `spectrum` | Glowing block bars along the bottom, bass in red on the left to treble in purple on the right; the artwork shows through a little |
 | `circle` | The artwork cut into a circle, with a glowing rainbow waveform ring around it |
@@ -56,7 +56,7 @@ Add `&effect=` to draw something that moves with the music on top of the artwork
 ```
 https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood&effect=circle
 ```
-An unsupported name is a 400 for any URL, SoundCloud or not. A supported `effect` is ignored for other sites and with `&audio=1`. Playback still starts within a few seconds with an effect.
+`effect=` (empty) and `effect=off` (any case) are the same as leaving `effect` out. An unsupported name is a 400 for any URL, SoundCloud or not. A supported `effect` is ignored for other sites and with `&audio=1`. Playback still starts within a few seconds with an effect.
 
 Add `&audio=1` for the previous audio-only behavior (a redirect to SoundCloud's own HLS audio stream):
 ```

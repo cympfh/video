@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
-- SoundCloud video takes `&effect=wave|spectrum|circle|volume` to overlay an audio-reactive rainbow waveform, rainbow block frequency bars, a rainbow waveform ring around a circular artwork, or level meters (ffmpeg filters only; 15 fps, libx264 veryfast). Without `effect` nothing changes. Unsupported names are 400 for any URL; a supported `effect` is ignored for other sites and with `&audio=1`.
+- SoundCloud video takes `&effect=wave|spectrum|circle|volume` to overlay an audio-reactive rainbow waveform, rainbow block frequency bars, a rainbow waveform ring around a circular artwork, or level meters (ffmpeg filters only; 15 fps, libx264 veryfast). Without `effect`, or with `effect=` / `effect=off`, nothing changes. Unsupported names are 400 for any URL; a supported `effect` is ignored for other sites and with `&audio=1`.
 - SoundCloud tracks play as video by default: the track artwork as a still 16:9 frame (blurred background, black without artwork) with the audio, as h264 + aac HLS encoded faster than real time. The redirect happens once the first 4-second segment exists, and the playlist carries `#EXT-X-START:TIME-OFFSET=0` so late joiners also start from the beginning. `&audio=1` keeps the old audio-only redirect.
 - SoundCloud track URLs resolve to their HLS audio stream via the public api-v2 (client_id is scraped from soundcloud.com and refreshed on 401/403). Public tracks only; playlists and profiles are passed through unchanged.
 - X/Twitter status URLs without a video now play as an image slideshow of the post's photos (a single photo becomes a still image stream), instead of failing with 502.

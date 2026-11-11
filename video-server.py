@@ -182,7 +182,7 @@ async def root(
         SoundCloud を音だけの HLS にリダイレクトする（既定はアートワーク付きの映像）
     effect
         SoundCloud の映像に重ねる演出 (wave / spectrum / circle / volume)。
-        知らない名前は 400。``audio=1`` のときと SoundCloud 以外では無視する
+        省略・空・``off`` は演出なし。知らない名前は 400。``audio=1`` のときと SoundCloud 以外では無視する
     """
     if not url:
         return index_page()
@@ -792,7 +792,7 @@ def _unknown_effect_response() -> tuple[int, str]:
     """知らない ``effect`` は、URL を見に行く前に 400 で断る
 
     >>> _unknown_effect_response()
-    (400, "Unknown effect 'sparkle'. Choose one of: wave, spectrum, circle, volume")
+    (400, "Unknown effect 'sparkle'. Choose one of: off, wave, spectrum, circle, volume")
     """
     from fastapi.testclient import TestClient
 
@@ -805,6 +805,34 @@ def _unknown_effect_response() -> tuple[int, str]:
             },
         )
     return r.status_code, r.json()["detail"]
+
+
+def _effect_off_reaches_soundcloud() -> list:
+    """``effect`` の省略・空・``off`` はどれも演出なし (None) で SoundCloud の映像を作る
+
+    >>> _effect_off_reaches_soundcloud()
+    [None, None, None, None, None, 'wave']
+    """
+    from fastapi.testclient import TestClient
+
+    global soundcloud_video
+    seen = []
+    original = soundcloud_video
+
+    async def fake(url: str, effect: str | None = None):
+        seen.append(effect)
+        return Response(status_code=204)
+
+    soundcloud_video = fake
+    try:
+        with TestClient(app) as client:
+            base = {"url": "https://soundcloud.com/forss/flickermood"}
+            client.get("/video", params=base)
+            for value in ("", "  ", "off", " OFF ", "wave"):
+                client.get("/video", params={**base, "effect": value})
+    finally:
+        soundcloud_video = original
+    return seen
 
 
 # ImageStream

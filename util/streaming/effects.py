@@ -61,25 +61,32 @@ def _volume_position(db: float) -> float:
 OVERLAY_OPACITY = 0.7
 
 
+# effect= にこれを渡すと演出なし (省略と同じ)
+EFFECT_OFF = "off"
+
+
 def parse_effect(value: str | None) -> str | None:
-    """``effect`` クエリを正規化する。空なら None (従来どおり静止画だけ)
+    """``effect`` クエリを正規化する。省略・空・``off`` なら None (従来どおり静止画だけ)
 
     >>> parse_effect(None) is None, parse_effect("") is None, parse_effect("  ") is None
+    (True, True, True)
+    >>> parse_effect("off") is None, parse_effect(" OFF ") is None, parse_effect("Off") is None
     (True, True, True)
     >>> parse_effect("wave"), parse_effect(" Spectrum ")
     ('wave', 'spectrum')
     >>> parse_effect("sparkle")
     Traceback (most recent call last):
     ...
-    ValueError: Unknown effect 'sparkle'. Choose one of: wave, spectrum, circle, volume
+    ValueError: Unknown effect 'sparkle'. Choose one of: off, wave, spectrum, circle, volume
     """
-    if value is None or not value.strip():
+    if value is None:
         return None
     name = value.strip().lower()
+    if name in ("", EFFECT_OFF):
+        return None
     if name not in EFFECTS:
-        raise ValueError(
-            f"Unknown effect {value.strip()!r}. Choose one of: {', '.join(EFFECTS)}"
-        )
+        choices = ", ".join((EFFECT_OFF, *EFFECTS))
+        raise ValueError(f"Unknown effect {value.strip()!r}. Choose one of: {choices}")
     return name
 
 
@@ -125,7 +132,7 @@ def effect_filtergraph(
     >>> effect_filtergraph("sparkle")
     Traceback (most recent call last):
     ...
-    ValueError: Unknown effect 'sparkle'. Choose one of: wave, spectrum, circle, volume
+    ValueError: Unknown effect 'sparkle'. Choose one of: off, wave, spectrum, circle, volume
     """
     effect = parse_effect(effect)
     width, height = size

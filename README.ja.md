@@ -45,7 +45,7 @@ https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood
 
 | `effect` | 見た目 |
 |---|---|
-| （なし） | 上のとおりアートワークだけ |
+| （なし）、空、`off` | 上のとおりアートワークだけ |
 | `wave` | 画面の下に光る虹色の波形（色がゆっくり流れる、アートワークが少し透ける） |
 | `spectrum` | 画面の下に光るブロックのバー（左の低音が赤、右の高音が紫、アートワークが少し透ける） |
 | `circle` | アートワークを円く切り抜き、まわりを光る虹色の波形の輪が囲む |
@@ -54,7 +54,7 @@ https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood
 ```
 https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood&effect=circle
 ```
-対応していない名前を渡すと、SoundCloud 以外の URL でも 400 になります。対応している名前でも、SoundCloud 以外と `&audio=1` のときは `effect` を無視します。演出ありでも再生は数秒で始まります。
+`effect=`（空）と `effect=off`（大文字小文字は問いません）は、`effect` を付けないのと同じです。対応していない名前を渡すと、SoundCloud 以外の URL でも 400 になります。対応している名前でも、SoundCloud 以外と `&audio=1` のときは `effect` を無視します。演出ありでも再生は数秒で始まります。
 
 従来どおり音声だけにしたいときは `&audio=1` を付けます（SoundCloud の HLS 音声ストリームへリダイレクト）。
 ```
