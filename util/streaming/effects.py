@@ -33,11 +33,12 @@ CIRCLE_WAVE_SIZE = (720, 86)
 # spectrum: バーの本数
 SPECTRUM_BARS = 64
 # 帯の高さと強さ。音圧の高い曲でもバーや波形が帯の上端で切れないように選んだ
-# (flickermood と Pegboard Nerds - Disconnected で上端に当たるコマが 1% 以下)
+# (forss/flickermood と Pegboard Nerds - Disconnected で、上端に当たるコマは
+# wave 0.1%、spectrum 0%。ffmpeg 5.1.1 で測定)
 WAVE_HEIGHT = 200
 WAVE_GAIN = 0.65
 SPECTRUM_HEIGHT = 216  # 画面の下 4 割
-SPECTRUM_GAIN = 10
+SPECTRUM_GAIN = 6
 # volume: RMS の -VOLUME_RANGE_DB..0 dB を高さいっぱいに割り当てる。
 # -6 dB 以上で赤、-18 dB 以上で黄、それ未満は緑
 VOLUME_RANGE_DB = 36
@@ -46,12 +47,15 @@ VOLUME_YELLOW_DB = -18
 
 
 def _volume_position(db: float) -> float:
-    """showvolume の ``ds=log`` で dB が何割の高さになるか (``0.21 * log10(x) + 1``)
+    """RMS ``db`` が volume のメーターの何割の高さになるか (切り出す前)
 
-    >>> _volume_position(0), round(_volume_position(-36), 3)
-    (1.0, 0.622)
+    showvolume (ピーク, ``ds=log``) の高さは ``0.21 * log10(x) + 1``。
+    x は二乗平均 (RMS の 2 乗) を渡すので、dB は 2 倍に効く。
+
+    >>> _volume_position(0), round(_volume_position(-36), 3), round(_volume_position(-6), 3)
+    (1.0, 0.244, 0.874)
     """
-    return 1 + 0.21 * db / 20
+    return 1 + 0.21 * 2 * db / 20
 
 
 # wave / spectrum の不透明度 (濃さ)。サムネが少し透けて見えるよう 0.7
@@ -111,9 +115,11 @@ def effect_filtergraph(
     >>> "[2:v]" in g and "[3:v]" in g and "remap" in g and "hflip" in g
     True
     >>> g = effect_filtergraph("volume")
-    >>> "showvolume" in g and ":m=r:ds=log:" in g and "crop=iw:460:0:0" in g
+    >>> "aeval=exprs='val(0)*val(0)|val(1)*val(1)'" in g and ":m=p:ds=log:" in g
     True
-    >>> "if(gte(PEAK,0.9370)" in g and "if(gte(PEAK,0.8110)" in g
+    >>> "w=608:" in g and "crop=iw:460:0:0" in g
+    True
+    >>> "if(gte(PEAK,0.8740)" in g and "if(gte(PEAK,0.6220)" in g  # -6 dB, -18 dB
     True
     >>> all(f"r={EFFECT_FPS}" in effect_filtergraph(e) for e in EFFECTS)
     True
@@ -139,11 +145,15 @@ def effect_filtergraph(
         bars = SPECTRUM_BARS
         step = width // bars
         # showcqt の明るさを帯ごとに平均して二値にし、ブロックのバーにする。
-        # 低音ばかり伸びないよう A 特性の平方根で重み付けする。
+        # 低音ばかり伸びないよう A 特性の平方根で重み付けし、bar_g=4 で小さい音を
+        # 持ち上げる (静かな曲や高音でもバーが立つ。2 だと flickermood で 2 割の
+        # コマがバー 3 本以下、右半分が空のコマが 3 割あった)。
+        # 二値化の閾値 25 (/255) は、帯の中で 1 割ほどの列が光っていれば立てる程度。
+        # 10 だと細いピークひとつでバー全体が立ち、上端まで張り付きやすかった。
         # 色はバーの位置 (低音=赤 → 高音=紫) で決める
         return (
             f"[1:a]showcqt=s={width}x{h}:r={fps}:bar_h={h}:sono_h=0:axis=0"
-            f":bar_g=2:bar_v={SPECTRUM_GAIN}*sqrt(a_weighting(f)):count=2"
+            f":bar_g=4:bar_v={SPECTRUM_GAIN}*sqrt(a_weighting(f)):count=2"
             f":basefreq=30:endfreq=8000,"
             f"format=gray,scale={bars}x{h}:flags=area,"
             f"lut=y='if(gt(val,25),255,0)',"
@@ -169,8 +179,12 @@ def effect_filtergraph(
             f"[0:v][fx]overlay={(width - side) // 2}:{(height - side) // 2}"
             f":format=auto,format=yuv420p[v]"
         )
-    # volume: 音圧 (RMS) を dB で。showvolume の ds=log は約 95 dB を高さに詰めるので
-    # 曲だとほぼ上まで届いてしまう。上から VOLUME_RANGE_DB 分だけ切り出して使う。
+    # volume: 音圧 (RMS) を dB で。showvolume の m=r は ffmpeg 5.x だと平方根を取らず、
+    # しかも数サンプルで追従する (ほぼ瞬時値の 2 乗) ので使わない。
+    # 自前で 2 乗して 4 Hz の 2 次 lowpass で均した二乗平均 (VU 計くらいの追従) を
+    # ピーク (m=p) で表示する。これは 5.1 でも 7.x でも同じ値になる
+    # (1 kHz の正弦波で -36 dB が下端、-18 dB が半分、-6 dB から赤を両方で確認)。ds=log は二乗平均の dB で約 95 dB
+    # (RMS では約 48 dB) を高さに詰めるので、上から VOLUME_RANGE_DB 分だけ切り出す。
     # 色の式の PEAK はその画素の高さ (0..1) なので、閾値も高さに直して塗り分ける
     meter = height - 80
     bottom = _volume_position(-VOLUME_RANGE_DB)
@@ -182,8 +196,9 @@ def effect_filtergraph(
         f"if(gte(PEAK,{yellow:.4f}),0xff00ffff,0xff00ff00))"
     )
     return (
-        f"[1:a]showvolume=r={fps}:o=v:w={full}:h=14:b=2:t=0:v=0:f=0.9:p=0"
-        f":m=r:ds=log:c='{color}',crop=iw:{meter}:0:0,"
+        f"[1:a]aeval=exprs='val(0)*val(0)|val(1)*val(1)':c=same,lowpass=f=4:p=2,"
+        f"showvolume=r={fps}:o=v:w={full}:h=14:b=2:t=0:v=0:f=0.9:p=0"
+        f":m=p:ds=log:c='{color}',crop=iw:{meter}:0:0,"
         f"format=rgba,colorchannelmixer=aa=0.85[fx];"
         f"[0:v][fx]overlay=W-w-24:(H-h)/2:format=auto,format=yuv420p[v]"
     )
