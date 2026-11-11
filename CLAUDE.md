@@ -75,7 +75,7 @@ Docker: `make build` then `make run` (needs `YOUTUBE_API_KEY`).
 
 `convert()` docstring examples use `asyncio.run(convert(...))` because `convert` is async. They do not cover X resolution (that hits the network).
 
-SoundCloud video pieces have offline doctests (no network): artwork URL upgrade in `util/sites/soundcloud.py`, frame composition in `util/streaming/artwork.py`, the ffmpeg command / `EXT-X-START` insertion / lock in `util/streaming/image_stream.py`, effect names and filtergraphs in `util/streaming/effects.py`, and the `start.m3u8` route plus the SoundCloud `from_url` shortcut in `video-server.py`:
+SoundCloud video pieces have offline doctests (no network): artwork URL upgrade in `util/sites/soundcloud.py`, frame composition in `util/streaming/artwork.py`, the ffmpeg command / `EXT-X-START` insertion / lock in `util/streaming/image_stream.py`, effect names and filtergraphs in `util/streaming/effects.py` (its doctest also runs every effect on a 1 s mono and stereo sine, so it needs ffmpeg), and the `start.m3u8` route plus the SoundCloud `from_url` shortcut in `video-server.py`:
 
 ```bash
 uv run python -m doctest util/sites/soundcloud.py util/streaming/artwork.py util/streaming/image_stream.py util/streaming/effects.py video-server.py

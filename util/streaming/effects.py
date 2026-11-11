@@ -32,9 +32,8 @@ CIRCLE_RING = (176, 262)
 CIRCLE_WAVE_SIZE = (720, 86)
 # spectrum: バーの本数
 SPECTRUM_BARS = 64
-# 帯の高さと強さ。音圧の高い曲でもバーや波形が帯の上端で切れないように選んだ
-# (forss/flickermood と Pegboard Nerds - Disconnected で、上端に当たるコマは
-# wave 0.1%、spectrum 0%。ffmpeg 5.1.1 で測定)
+# 帯の高さと強さ。音圧の高い曲でもバーや波形が帯の上端で切れることが
+# ほとんど無いように選んだ (静かな曲と音圧の高い EDM で確認)
 WAVE_HEIGHT = 200
 WAVE_GAIN = 0.65
 SPECTRUM_HEIGHT = 216  # 画面の下 4 割
@@ -58,7 +57,7 @@ def _volume_position(db: float) -> float:
     return 1 + 0.21 * 2 * db / 20
 
 
-# wave / spectrum の不透明度 (濃さ)。サムネが少し透けて見えるよう 0.7
+# wave / spectrum の不透明度 (濃さ)。アートワークが少し透けて見えるよう 0.7
 OVERLAY_OPACITY = 0.7
 
 
@@ -101,7 +100,7 @@ def effect_filtergraph(
     ...     for e in ("wave", "spectrum", "circle"))
     True
 
-    wave と spectrum はサムネが透けるよう OVERLAY_OPACITY を掛ける (circle は掛けない)
+    wave と spectrum はアートワークが透けるよう OVERLAY_OPACITY を掛ける (circle は掛けない)
 
     >>> [_FADE in effect_filtergraph(e) for e in EFFECTS]
     [True, True, False, False]
@@ -115,7 +114,7 @@ def effect_filtergraph(
     >>> "[2:v]" in g and "[3:v]" in g and "remap" in g and "hflip" in g
     True
     >>> g = effect_filtergraph("volume")
-    >>> "aeval=exprs='val(0)*val(0)|val(1)*val(1)'" in g and ":m=p:ds=log:" in g
+    >>> "aeval=exprs='val(ch)*val(ch)':c=same" in g and ":m=p:ds=log:" in g  # 何 ch でも
     True
     >>> "w=608:" in g and "crop=iw:460:0:0" in g
     True
@@ -146,8 +145,7 @@ def effect_filtergraph(
         step = width // bars
         # showcqt の明るさを帯ごとに平均して二値にし、ブロックのバーにする。
         # 低音ばかり伸びないよう A 特性の平方根で重み付けし、bar_g=4 で小さい音を
-        # 持ち上げる (静かな曲や高音でもバーが立つ。2 だと flickermood で 2 割の
-        # コマがバー 3 本以下、右半分が空のコマが 3 割あった)。
+        # 持ち上げる (2 だと静かな曲ではバーが数本しか立たず、右半分が空になりがち)。
         # 二値化の閾値 25 (/255) は、帯の中で 1 割ほどの列が光っていれば立てる程度。
         # 10 だと細いピークひとつでバー全体が立ち、上端まで張り付きやすかった。
         # 色はバーの位置 (低音=赤 → 高音=紫) で決める
@@ -196,7 +194,7 @@ def effect_filtergraph(
         f"if(gte(PEAK,{yellow:.4f}),0xff00ffff,0xff00ff00))"
     )
     return (
-        f"[1:a]aeval=exprs='val(0)*val(0)|val(1)*val(1)':c=same,lowpass=f=4:p=2,"
+        f"[1:a]aeval=exprs='val(ch)*val(ch)':c=same,lowpass=f=4:p=2,"
         f"showvolume=r={fps}:o=v:w={full}:h=14:b=2:t=0:v=0:f=0.9:p=0"
         f":m=p:ds=log:c='{color}',crop=iw:{meter}:0:0,"
         f"format=rgba,colorchannelmixer=aa=0.85[fx];"
@@ -315,3 +313,36 @@ def write_circle_maps(directory: str | Path) -> tuple[Path, Path]:
             Path(tmp).unlink(missing_ok=True)
             raise
     return xmap_path, ymap_path
+
+
+def _smoke_test(channels: int, effect: str, ffmpeg: str = "ffmpeg") -> int:
+    """1 秒の正弦波 (``channels`` ch) で演出のフィルタを実際に通し、終了コードを返す
+
+    モノラルの曲でも落ちないこと (volume が 2ch 決め打ちだと 502 になっていた)。
+
+    >>> import shutil
+    >>> if shutil.which("ffmpeg"):
+    ...     codes = [_smoke_test(n, e) for n in (1, 2) for e in EFFECTS]
+    ... else:
+    ...     codes = [0] * 8
+    >>> codes
+    [0, 0, 0, 0, 0, 0, 0, 0]
+    """
+    import subprocess
+
+    tone = "|".join(["0.3*sin(2*PI*440*t)"] * channels)
+    with tempfile.TemporaryDirectory() as d:
+        cmd = [
+            ffmpeg, "-loglevel", "error", "-f", "lavfi",
+            "-i", "color=c=black:s=960x540:r=15:d=1",
+            "-f", "lavfi", "-i", f"aevalsrc={tone}:s=44100:d=1",
+        ]
+        if effect == "circle":
+            for m in write_circle_maps(d):
+                cmd += ["-loop", "1", "-i", str(m)]
+        cmd += [
+            "-filter_complex", effect_filtergraph(effect),
+            "-map", "[v]", "-t", "1", "-f", "null", "-",
+        ]
+        return subprocess.run(cmd, capture_output=True, timeout=60).returncode
+
