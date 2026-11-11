@@ -43,6 +43,21 @@ https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood
 ```
 Plays public tracks as a video: the track artwork (centered, with a blurred copy filling the 16:9 frame; black when the track has no artwork) stays on screen while the audio plays. It is an HLS stream (h264 + aac) that starts after the first few seconds are encoded, so VRChat players do not time out. No API key needed. Playlists and profiles are not supported.
 
+Add `&effect=` to draw something that moves with the music on top of the artwork:
+
+| `effect` | Looks like |
+|---|---|
+| (none) | Artwork only, as above |
+| `wave` | A white waveform across the bottom of the frame |
+| `spectrum` | Frequency bars (low to high, left to right) along the bottom |
+| `circle` | The artwork cut into a circle, with a waveform ring around it |
+| `volume` | Left/right level meters at the right edge |
+
+```
+https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood&effect=circle
+```
+An unknown name is a 400. `effect` is ignored for other sites and with `&audio=1`. With an effect the video is 15 fps instead of 8, and it takes about twice as long to encode, but it still starts within a few seconds.
+
 Add `&audio=1` for the previous audio-only behavior (a redirect to SoundCloud's own HLS audio stream):
 ```
 https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood&audio=1

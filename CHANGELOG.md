@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- SoundCloud video takes `&effect=wave|spectrum|circle|volume` to overlay an audio-reactive waveform, frequency bars, a waveform ring around a circular artwork, or level meters (ffmpeg filters only; 15 fps, libx264 veryfast). Without `effect` nothing changes. Unknown names are 400; `effect` is ignored for other sites and with `&audio=1`.
+
+### Added
+
 - SoundCloud tracks play as video by default: the track artwork as a still 16:9 frame (blurred background, black without artwork) with the audio, as h264 + aac HLS encoded faster than real time. The redirect happens once the first 4-second segment exists, and the playlist carries `#EXT-X-START:TIME-OFFSET=0` so late joiners also start from the beginning. `&audio=1` keeps the old audio-only redirect.
 
 ### Added
