@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-FastAPI redirect service for VRChat video players. `GET /` and `GET /video` take `url` (repeatable), plus `interval` / `loop` for image slideshows, `p` for Bilibili page index, and `audio` (SoundCloud audio-only).
+FastAPI redirect service for VRChat video players. `GET /` and `GET /video` take `url` (repeatable), plus `interval` / `loop` for image slideshows, `p` for Bilibili page index, `audio` (SoundCloud audio-only), and `effect` (SoundCloud overlay: `wave` / `spectrum` / `circle` / `volume`).
 
 Public examples use `https://s.cympfh.cc/video?url=...` (https, not http).
 
@@ -14,6 +14,7 @@ Public examples use `https://s.cympfh.cc/video?url=...` (https, not http).
 - **Utility modules** in `util/` (classes are re-exported from `util/__init__.py`):
   - `sites/youtube.py` - YouTube Data API search and thumbnails. Needs `YOUTUBE_API_KEY`.
   - `streaming/image_stream.py` - Image and slideshow streaming, plus still image + audio HLS (`get_with_audio`, used for SoundCloud)
+  - `streaming/effects.py` - `effect=` names (`parse_effect`), the ffmpeg `-filter_complex` per effect, and the `remap` coordinate maps for `circle`
   - `streaming/artwork.py` - Composes a 960x540 still frame from cover art (centered, blurred cover background, black fallback)
   - `streaming/uploads.py` - Saved image uploads and retention (newest 10, and uploaded within 7 days)
   - `random/videos.py` - Date-seeded pick from a public gist of video URLs
@@ -31,6 +32,7 @@ Public examples use `https://s.cympfh.cc/video?url=...` (https, not http).
 - **iwara** (`iwara.tv/video/`): `https://nicovrc.net/?url={url}`.
 - **X / Twitter** (`x.com` or `twitter.com` `/status/{id}`): the route calls `util.X.resolve()` once and branches: video → 307 to the mp4; photos only → `ImageStream` slideshow (single photo → still image). Video wins when a status mixes both. `convert()` still uses video-only `resolve_mp4()`. No nicovrc.
 - **SoundCloud** (`soundcloud.com/{user}/{track}`): by default the route builds a video. `soundcloud_video()` resolves the track (`util.SoundCloud.resolve()`), and `ImageStream.get_with_audio()` downloads the artwork (track `artwork_url` only; missing or failed download means a black frame), composes a 960x540 PNG with Pillow (`util/streaming/artwork.py`), and runs ffmpeg: `-loop 1 -framerate 8` still + the SoundCloud HLS audio, libx264 `ultrafast` `-tune stillimage` crf 30, GOP/keyframe every 4s, aac 128k 44.1kHz stereo, `-shortest` plus `-t duration+1`, HLS 4s segments, `-hls_list_size 0 -hls_playlist_type event`. No `-re`: a 4-minute track finishes in about 4-5s, and the redirect happens as soon as the first segment is in the playlist (about 1.7s warm, 2.6s with a cold client_id). The redirect target is `/video/stream/{key}/start.m3u8`, a route that serves ffmpeg's `index.m3u8` with `#EXT-X-START:TIME-OFFSET=0,PRECISE=YES` added so players treat the still-growing EVENT playlist from the start, not the live edge; segments stay relative and come from StaticFiles. The cache key is the track URL without query (signed stream URLs change every time), so a cached or in-progress stream redirects before any SoundCloud API call. A per-track asyncio lock keeps simultaneous requests on one ffmpeg. An unfinished playlist with no ffmpeg behind it (server restart) is discarded and rebuilt; ffmpeg failure before the first segment is 502. ffmpeg's log goes to `$TMPDIR/ffmpeg-{key}.log`, not the served directory, because it contains the signed URL. `UrlType.from_url()` skips the HEAD probe for SoundCloud tracks. `?audio=1` (and `convert()`, used by random) keeps the old behavior: resolve to the HLS m3u8 stream URL via `util.SoundCloud.resolve_stream()` and redirect. Stream URLs are CloudFront-signed (~12h); redirect, no proxying.
+- **SoundCloud `effect=`**: checked first in `root()` by `parse_effect()` (empty or `off`, case-insensitive and trimmed, means no effect, the same as omitting it; unsupported name is 400 for any URL), ignored for other sites and with `audio=1`. Filters must exist in ffmpeg 5.1 (production): `showwaves` (`wave`, and `circle` via a mirrored strip bent by `remap` with PGM maps in `stream/_maps/`), `showcqt` weighted by `sqrt(a_weighting(f))` with `bar_g=4`, averaged into 64 blocky bars (`spectrum`); `wave`/`spectrum`/`circle` color a `geq` rainbow (one frame, `loop`ed) through the shape with `alphamerge`, plus a cheap glow (blur at 1/4 size), `showvolume` (`volume`: not `m=r`, which in ffmpeg 5.x skips the sqrt and follows within a few samples; instead `aeval` squares the audio, `lowpass=f=4:p=2` averages it, and `m=p` shows that mean square. With `ds=log` it is drawn tall and cropped to RMS -36..0 dB, colored by height since the `c` expression is a per-position LUT. Checked with a 1 kHz sine on 5.1.1 and 7.1: same heights, red from -6 dB); `wave`/`spectrum` are faded to `OVERLAY_OPACITY` (0.7). Band heights and gains (`WAVE_*`, `SPECTRUM_*`) are picked so loud tracks do not clip at the band's top edge. Effect mode is 15 fps, `-preset veryfast` (much smaller than ultrafast, filters dominate the speed), no `-tune stillimage`. The effect is part of the cache key and lock; no effect keeps the old key and command.
 - **random**: gist list, shuffle seeded by UTC `YYYY/MM/DD`, index `hour % len`. Same day and hour returns the same video.
 - **random-live**: same time seed, then walk the list until a channel is live. `?url=random-live` must be matched before the `random` prefix. Gist: secret `https://gist.github.com/cympfh/e8ee500adacbc1bbfc717ca7cbb2a9b4` (`random-live-users`, one `@handle` or channel ID per line). 404 if nobody is live.
 - **Images**: single image, or 2+ `url=` values as a slideshow (`interval`, `loop`).
@@ -73,10 +75,10 @@ Docker: `make build` then `make run` (needs `YOUTUBE_API_KEY`).
 
 `convert()` docstring examples use `asyncio.run(convert(...))` because `convert` is async. They do not cover X resolution (that hits the network).
 
-SoundCloud video pieces have offline doctests (no network): artwork URL upgrade in `util/sites/soundcloud.py`, frame composition in `util/streaming/artwork.py`, the ffmpeg command / `EXT-X-START` insertion / lock in `util/streaming/image_stream.py`, and the `start.m3u8` route plus the SoundCloud `from_url` shortcut in `video-server.py`:
+SoundCloud video pieces have offline doctests (no network): artwork URL upgrade in `util/sites/soundcloud.py`, frame composition in `util/streaming/artwork.py`, the ffmpeg command / `EXT-X-START` insertion / lock in `util/streaming/image_stream.py`, effect names and filtergraphs in `util/streaming/effects.py` (its doctest also runs every effect on a 1 s mono and stereo sine, so it needs ffmpeg), and the `start.m3u8` route plus the SoundCloud `from_url` shortcut in `video-server.py`:
 
 ```bash
-uv run python -m doctest util/sites/soundcloud.py util/streaming/artwork.py util/streaming/image_stream.py video-server.py
+uv run python -m doctest util/sites/soundcloud.py util/streaming/artwork.py util/streaming/image_stream.py util/streaming/effects.py video-server.py
 ```
 
 Upload retention lives in `util/streaming/uploads.py`:

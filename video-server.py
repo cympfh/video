@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, RedirectResponse, Response, Streamin
 from fastapi.staticfiles import StaticFiles
 
 import util
+from util.streaming.effects import parse_effect
 from util.streaming.uploads import (
     UploadStore,
     content_type_for,
@@ -162,6 +163,7 @@ async def root(
     loop: int = Query(100, ge=1),
     p: int | None = Query(None, ge=1),
     audio: bool = Query(False),
+    effect: str | None = Query(None),
 ):
     """Redirect API
 
@@ -178,9 +180,16 @@ async def root(
         ビリビリ動画のページ番号（シリーズの何本目か、1始まり）
     audio
         SoundCloud を音だけの HLS にリダイレクトする（既定はアートワーク付きの映像）
+    effect
+        SoundCloud の映像に重ねる演出 (wave / spectrum / circle / volume)。
+        省略・空・``off`` は演出なし。知らない名前は 400。``audio=1`` のときと SoundCloud 以外では無視する
     """
     if not url:
         return index_page()
+    try:
+        effect = parse_effect(effect)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     # スライドショーモード判定
     if len(url) >= 2:
@@ -230,7 +239,7 @@ async def root(
             # ?audio=1 なら従来どおり音だけの HLS へリダイレクト (convert)
             sc = util.SoundCloud()
             if sc.is_track(url) and not audio:
-                return await soundcloud_video(url)
+                return await soundcloud_video(url, effect)
             converted_url = await convert(url, p=p)
             logger.info(f"Video URL converted: {url} -> {converted_url}")
             return RedirectResponse(converted_url)
@@ -290,22 +299,26 @@ async def video(
     loop: int = Query(100, ge=1),
     p: int | None = Query(None, ge=1),
     audio: bool = Query(False),
+    effect: str | None = Query(None),
 ):
     if not url:
         return index_page()
-    return await root(request, url, interval, loop, p, audio)
+    return await root(request, url, interval, loop, p, audio, effect)
 
 
-async def soundcloud_video(url: str):
-    """SoundCloud トラックを、アートワーク + 音声 の HLS (h264 + aac) で返す"""
+async def soundcloud_video(url: str, effect: str | None = None):
+    """SoundCloud トラックを、アートワーク + 音声 の HLS (h264 + aac) で返す
+
+    ``effect`` は ``parse_effect`` 済みの演出名 (None なら静止画だけ)
+    """
     key = url.split("?")[0].split("#")[0].rstrip("/")
-    # 同じトラックの同時リクエストは 1 本の ffmpeg を待ち合わせる
-    async with istream.audio_lock(key):
-        return await _soundcloud_video_locked(url, key)
+    # 同じトラック (と演出) の同時リクエストは 1 本の ffmpeg を待ち合わせる
+    async with istream.audio_lock(key, effect):
+        return await _soundcloud_video_locked(url, key, effect)
 
 
-async def _soundcloud_video_locked(url: str, key: str):
-    cached = await istream.cached_audio_stream(key)
+async def _soundcloud_video_locked(url: str, key: str, effect: str | None = None):
+    cached = await istream.cached_audio_stream(key, effect=effect)
     if cached is not None:
         return cached
     try:
@@ -316,13 +329,15 @@ async def _soundcloud_video_locked(url: str, key: str):
             status_code=502, detail="Failed to resolve SoundCloud track"
         )
     logger.info(
-        f"SoundCloud video: {url} ({track.duration}s, artwork={track.artwork_url})"
+        f"SoundCloud video: {url} ({track.duration}s, artwork={track.artwork_url},"
+        f" effect={effect})"
     )
     return await istream.get_with_audio(
         key=key,
         audio_url=track.stream_url,
         artwork_url=track.artwork_url,
         duration=track.duration,
+        effect=effect,
     )
 
 
@@ -771,6 +786,53 @@ def _event_playlist_response() -> tuple[int, str, str, int]:
         )
     finally:
         shutil.rmtree(directory, ignore_errors=True)
+
+
+def _unknown_effect_response() -> tuple[int, str]:
+    """知らない ``effect`` は、URL を見に行く前に 400 で断る
+
+    >>> _unknown_effect_response()
+    (400, "Unknown effect 'sparkle'. Choose one of: off, wave, spectrum, circle, volume")
+    """
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        r = client.get(
+            "/video",
+            params={
+                "url": "https://soundcloud.com/forss/flickermood",
+                "effect": "sparkle",
+            },
+        )
+    return r.status_code, r.json()["detail"]
+
+
+def _effect_off_reaches_soundcloud() -> list:
+    """``effect`` の省略・空・``off`` はどれも演出なし (None) で SoundCloud の映像を作る
+
+    >>> _effect_off_reaches_soundcloud()
+    [None, None, None, None, None, 'wave']
+    """
+    from fastapi.testclient import TestClient
+
+    global soundcloud_video
+    seen = []
+    original = soundcloud_video
+
+    async def fake(url: str, effect: str | None = None):
+        seen.append(effect)
+        return Response(status_code=204)
+
+    soundcloud_video = fake
+    try:
+        with TestClient(app) as client:
+            base = {"url": "https://soundcloud.com/forss/flickermood"}
+            client.get("/video", params=base)
+            for value in ("", "  ", "off", " OFF ", "wave"):
+                client.get("/video", params={**base, "effect": value})
+    finally:
+        soundcloud_video = original
+    return seen
 
 
 # ImageStream

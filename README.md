@@ -43,6 +43,21 @@ https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood
 ```
 Plays public tracks as a video: the track artwork (centered, with a blurred copy filling the 16:9 frame; black when the track has no artwork) stays on screen while the audio plays. It is an HLS stream (h264 + aac) that starts after the first few seconds are encoded, so VRChat players do not time out. No API key needed. Playlists and profiles are not supported.
 
+Add `&effect=` to draw something that moves with the music on top of the artwork:
+
+| `effect` | Looks like |
+|---|---|
+| (none), empty, or `off` | Artwork only, as above |
+| `wave` | A glowing rainbow waveform across the bottom of the frame, its colors slowly flowing; the artwork shows through a little |
+| `spectrum` | Glowing block bars along the bottom, bass in red on the left to treble in purple on the right; the artwork shows through a little |
+| `circle` | The artwork cut into a circle, with a glowing rainbow waveform ring around it |
+| `volume` | Left/right loudness meters at the right edge: green, yellow near loud, red only at the loudest |
+
+```
+https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood&effect=circle
+```
+`effect=` (empty) and `effect=off` (any case) are the same as leaving `effect` out. An unsupported name is a 400 for any URL, SoundCloud or not. A supported `effect` is ignored for other sites and with `&audio=1`. Playback still starts within a few seconds with an effect.
+
 Add `&audio=1` for the previous audio-only behavior (a redirect to SoundCloud's own HLS audio stream):
 ```
 https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood&audio=1

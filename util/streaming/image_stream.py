@@ -15,6 +15,12 @@ from fastapi.responses import RedirectResponse
 from starlette.concurrency import run_in_threadpool
 
 from util.streaming.artwork import compose_frame_png
+from util.streaming.effects import (
+    CIRCLE_ART_RADIUS,
+    EFFECT_FPS,
+    effect_filtergraph,
+    write_circle_maps,
+)
 
 logger = logging.getLogger("uvicorn")
 
@@ -250,8 +256,15 @@ class ImageStream:
         outdir: str | Path,
         duration: float | None = None,
         fps: int = 8,
+        effect: str | None = None,
+        maps: tuple[str | Path, str | Path] | None = None,
     ) -> list[str]:
         """静止画 + 音声 を HLS (h264 + aac) にする ffmpeg コマンド
+
+        ``effect`` (wave / spectrum / circle / volume) を渡すと、音に合わせた
+        演出を ``-filter_complex`` で重ねる。毎コマ絵が変わるので ``EFFECT_FPS``
+        にして ``-tune stillimage`` は付けず、preset は veryfast (サイズが半分以下)。
+        ``circle`` は ``maps`` (``write_circle_maps`` の xmap, ymap) が要る。
 
         静止画は ``-loop 1`` で流し続け、音が終わったところで止める
         (``-shortest``、長さが分かっていれば ``-t`` でも頭打ち)。
@@ -274,8 +287,28 @@ class ImageStream:
         'stream/k/index.m3u8'
         >>> "-t" in ImageStream.audio_stream_command("f.png", "a.m3u8", "o")
         False
+
+        演出つき
+
+        >>> cmd = ImageStream.audio_stream_command("f.png", "a.m3u8", "o", 60.0, effect="wave")
+        >>> cmd[cmd.index("-framerate") + 1], cmd[cmd.index("-r") + 1]
+        ('15', '15')
+        >>> cmd[cmd.index("-map") + 1], "showwaves" in cmd[cmd.index("-filter_complex") + 1]
+        ('[v]', True)
+        >>> cmd[cmd.index("-preset") + 1], "-tune" in cmd or "-vf" in cmd
+        ('veryfast', False)
+        >>> cmd = ImageStream.audio_stream_command(
+        ...     "f.png", "a.m3u8", "o", effect="circle", maps=("x.pgm", "y.pgm"))
+        >>> cmd[cmd.index("x.pgm") - 3:cmd.index("y.pgm") + 1]
+        ['-loop', '1', '-i', 'x.pgm', '-loop', '1', '-i', 'y.pgm']
+        >>> ImageStream.audio_stream_command("f.png", "a.m3u8", "o", effect="circle")
+        Traceback (most recent call last):
+        ...
+        ValueError: effect=circle needs remap maps
         """
         outdir = Path(outdir)
+        if effect:
+            fps = EFFECT_FPS
         cmd = [
             "ffmpeg",
             "-y",
@@ -287,18 +320,34 @@ class ImageStream:
             str(frame_path),
             "-i",
             audio_url,
-            "-map",
-            "0:v:0",
-            "-map",
-            "1:a:0",
-            "-vf",
-            "format=yuv420p",
+        ]
+        if effect == "circle":
+            if not maps:
+                raise ValueError("effect=circle needs remap maps")
+            for m in maps:
+                cmd += ["-loop", "1", "-i", str(m)]
+        if effect:
+            cmd += [
+                "-filter_complex",
+                effect_filtergraph(effect, fps=fps),
+                "-map",
+                "[v]",
+                "-map",
+                "1:a:0",
+            ]
+        else:
+            cmd += ["-map", "0:v:0", "-map", "1:a:0", "-vf", "format=yuv420p"]
+        # 演出つきは毎コマ変わるので ultrafast だと 2.5 倍ほど重くなる。
+        # veryfast でも速度は 1 割ほどしか落ちない (フィルタ側が律速)
+        cmd += [
             "-c:v",
             "libx264",
             "-preset",
-            "ultrafast",
-            "-tune",
-            "stillimage",
+            "veryfast" if effect else "ultrafast",
+        ]
+        if not effect:
+            cmd += ["-tune", "stillimage"]
+        cmd += [
             "-crf",
             "30",
             "-r",
@@ -347,11 +396,15 @@ class ImageStream:
         audio_url: str,
         stream_key: str,
         duration: float | None = None,
+        effect: str | None = None,
+        maps: tuple[Path, Path] | None = None,
     ):
         """静止画 + 音声 の HLS ストリームを開始する"""
         outdir = self.BASE_DIR / stream_key
         os.makedirs(str(outdir), exist_ok=True)
-        cmd = self.audio_stream_command(frame_path, audio_url, outdir, duration)
+        cmd = self.audio_stream_command(
+            frame_path, audio_url, outdir, duration, effect=effect, maps=maps
+        )
         logger.info(f"Starting HLS audio+still stream: {stream_key}")
         # ログは配信ディレクトリの外に置く (署名付きの音声 URL が載るので)
         log = open(Path(tempfile.gettempdir()) / f"ffmpeg-{stream_key}.log", "wb")
@@ -361,33 +414,46 @@ class ImageStream:
         logger.info(f"FFmpeg audio+still process started with PID: {process.pid}")
         return process
 
-    def audio_lock(self, key: str) -> asyncio.Lock:
+    def audio_lock(self, key: str, effect: str | None = None) -> asyncio.Lock:
         """同じトラックへの同時リクエストで ffmpeg を二重に起動しないためのロック
 
         >>> s = ImageStream()
         >>> s.audio_lock("a") is s.audio_lock("a"), s.audio_lock("a") is s.audio_lock("b")
         (True, False)
+        >>> s.audio_lock("a", "wave") is s.audio_lock("a"), s.audio_lock("a", "wave") is s.audio_lock("a", "wave")
+        (False, True)
         """
-        return self._audio_locks.setdefault(self.audio_stream_key(key), asyncio.Lock())
+        return self._audio_locks.setdefault(
+            self.audio_stream_key(key, effect), asyncio.Lock()
+        )
 
     @staticmethod
-    def audio_stream_key(key: str) -> str:
-        """音声つきストリームのディレクトリ名
+    def audio_stream_key(key: str, effect: str | None = None) -> str:
+        """音声つきストリームのディレクトリ名。演出ごとに別になる
+
+        演出なしは従来と同じキー (作成済みのキャッシュをそのまま使う)
 
         >>> ImageStream.audio_stream_key("https://soundcloud.com/forss/flickermood")[:12]
         'b3b27cabc573'
+        >>> url = "https://soundcloud.com/forss/flickermood"
+        >>> len({ImageStream.audio_stream_key(url, e) for e in (None, "wave", "spectrum", "circle", "volume")})
+        5
         """
+        if effect:
+            return hashlib.sha256(
+                f"audio-still|{key}|effect={effect}".encode()
+            ).hexdigest()
         return hashlib.sha256(f"audio-still|{key}".encode()).hexdigest()
 
     async def cached_audio_stream(
-        self, key: str, timeout: float = 30.0
+        self, key: str, timeout: float = 30.0, effect: str | None = None
     ) -> RedirectResponse | None:
         """作成済み (または作成中) の音声つきストリームがあればそこへリダイレクトする
 
         署名付きの音声 URL を取り直さずに済むよう、解決より先に呼べる。
         途中で止まったもの (再起動など、ENDLIST が無く ffmpeg もいない) は消して None。
         """
-        stream_key = self.audio_stream_key(key)
+        stream_key = self.audio_stream_key(key, effect)
         # index.m3u8 に EXT-X-START を足したもの (video-server.py の event_playlist)
         location = f"/video/stream/{stream_key}/{self.EVENT_PLAYLIST}"
         outdir = self.BASE_DIR / stream_key
@@ -418,6 +484,7 @@ class ImageStream:
         artwork_url: str | None,
         duration: float | None = None,
         timeout: float = 30.0,
+        effect: str | None = None,
     ) -> RedirectResponse:
         """アートワークの静止画に音声を重ねた HLS を作ってリダイレクトする
 
@@ -433,11 +500,13 @@ class ImageStream:
             音声の長さ(秒)。分かれば ``-t`` の上限にする
         timeout
             最初のセグメントを待つ秒数
+        effect
+            重ねる演出 (``util.streaming.effects.EFFECTS``)。None なら静止画だけ
         """
-        cached = await self.cached_audio_stream(key, timeout)
+        cached = await self.cached_audio_stream(key, timeout, effect)
         if cached is not None:
             return cached
-        stream_key = self.audio_stream_key(key)
+        stream_key = self.audio_stream_key(key, effect)
         location = f"/video/stream/{stream_key}/{self.EVENT_PLAYLIST}"
         outdir = self.BASE_DIR / stream_key
 
@@ -457,11 +526,20 @@ class ImageStream:
 
         os.makedirs(str(outdir), exist_ok=True)
         frame_path = outdir / "frame.png"
-        png = await run_in_threadpool(compose_frame_png, artwork)
+        circle_radius = CIRCLE_ART_RADIUS if effect == "circle" else None
+        png = await run_in_threadpool(
+            compose_frame_png, artwork, circle_radius=circle_radius
+        )
         frame_path.write_bytes(png)
+        maps = None
+        if effect == "circle":
+            # 全トラック共通。初回だけ作る
+            maps = await run_in_threadpool(write_circle_maps, self.BASE_DIR / "_maps")
 
         self._cleanup_old_processes()
-        self.stream_with_audio(str(frame_path), audio_url, stream_key, duration)
+        self.stream_with_audio(
+            str(frame_path), audio_url, stream_key, duration, effect=effect, maps=maps
+        )
         await self._wait_for_playlist(stream_key, timeout)
         logger.info(f"Audio+still stream ready, redirecting to: {location}")
         return RedirectResponse(url=location, status_code=302)
