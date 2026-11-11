@@ -8,31 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
-- SoundCloud video takes `&effect=wave|spectrum|circle|volume` to overlay an audio-reactive waveform, frequency bars, a waveform ring around a circular artwork, or level meters (ffmpeg filters only; 15 fps, libx264 veryfast). Without `effect` nothing changes. Unknown names are 400; `effect` is ignored for other sites and with `&audio=1`.
-
-### Added
-
+- SoundCloud video takes `&effect=wave|spectrum|circle|volume` to overlay an audio-reactive rainbow waveform, rainbow block frequency bars, a rainbow waveform ring around a circular artwork, or level meters (ffmpeg filters only; 15 fps, libx264 veryfast). Without `effect` nothing changes. Unsupported names are 400 for any URL; a supported `effect` is ignored for other sites and with `&audio=1`.
 - SoundCloud tracks play as video by default: the track artwork as a still 16:9 frame (blurred background, black without artwork) with the audio, as h264 + aac HLS encoded faster than real time. The redirect happens once the first 4-second segment exists, and the playlist carries `#EXT-X-START:TIME-OFFSET=0` so late joiners also start from the beginning. `&audio=1` keeps the old audio-only redirect.
-
-### Added
-
 - SoundCloud track URLs resolve to their HLS audio stream via the public api-v2 (client_id is scraped from soundcloud.com and refreshed on 401/403). Public tracks only; playlists and profiles are passed through unchanged.
-
-### Added
-
 - X/Twitter status URLs without a video now play as an image slideshow of the post's photos (a single photo becomes a still image stream), instead of failing with 502.
+- Index page: visiting `/` or `/video` without `url` shows a form that builds `https://s.cympfh.cc/video?url=...` and copies it.
+- Query parameter `p` for Bilibili multi-part videos (1-based page index). Forwarded to biliplayer as `&p=N`.
+- `random-live` alias: pick a currently-live YouTube stream from a curated channel-ID gist.
 
 ### Fixed
 
 - iwara URLs use `https://nicovrc.net/?url=` instead of `nicovrc.net/proxy/?`.
 - X/Twitter status URLs resolve to a `video.twimg.com` mp4 via the syndication endpoint, without nicovrc.
-
-### Added
-
-- Index page: visiting `/` or `/video` without `url` shows a form that builds `https://s.cympfh.cc/video?url=...` and copies it.
-
-- Query parameter `p` for Bilibili multi-part videos (1-based page index). Forwarded to biliplayer as `&p=N`.
-- `random-live` alias: pick a currently-live YouTube stream from a curated channel-ID gist.
 
 ## [2026-01-06]
 

@@ -48,15 +48,15 @@ Add `&effect=` to draw something that moves with the music on top of the artwork
 | `effect` | Looks like |
 |---|---|
 | (none) | Artwork only, as above |
-| `wave` | A white waveform across the bottom of the frame |
-| `spectrum` | Frequency bars (low to high, left to right) along the bottom |
-| `circle` | The artwork cut into a circle, with a waveform ring around it |
+| `wave` | A glowing rainbow waveform across the bottom of the frame, its colors slowly flowing |
+| `spectrum` | Glowing block bars along the bottom, bass in red on the left to treble in purple on the right |
+| `circle` | The artwork cut into a circle, with a glowing rainbow waveform ring around it |
 | `volume` | Left/right level meters at the right edge |
 
 ```
 https://s.cympfh.cc/video?url=https://soundcloud.com/forss/flickermood&effect=circle
 ```
-An unknown name is a 400. `effect` is ignored for other sites and with `&audio=1`. With an effect the video is 15 fps instead of 8, and it takes about twice as long to encode, but it still starts within a few seconds.
+An unsupported name is a 400 for any URL, SoundCloud or not. A supported `effect` is ignored for other sites and with `&audio=1`. Playback still starts within a few seconds with an effect.
 
 Add `&audio=1` for the previous audio-only behavior (a redirect to SoundCloud's own HLS audio stream):
 ```

@@ -1,20 +1,23 @@
-"""Audio-reactive overlays for SoundCloud video (``&effect=...``).
+"""SoundCloud の映像に重ねる、音に合わせて動く演出 (``&effect=...``)
 
-Everything is drawn by ffmpeg filters available in ffmpeg 5.1 (production):
+どれも本番の ffmpeg 5.1 にあるフィルタだけで描く。色は虹色の帯 (``_rainbow``) を
+波形やバーの形で切り抜いて付け、ぼかしを下に敷いて光らせる。
 
-- ``wave``: ``showwaves`` line along the bottom of the frame
-- ``spectrum``: ``showcqt`` bars (low to high, colored) along the bottom of the frame
-- ``circle``: ``showwaves`` bent into a ring with ``remap`` around the artwork,
-  which is drawn smaller and round for this effect
-- ``volume``: ``showvolume`` meters (L/R) at the right edge
+- ``wave``: ``showwaves`` の波形を画面の下に。色相が横に一周し、時間とともに流れる
+- ``spectrum``: ``showcqt`` をブロックのバーにして画面の下に。低音が赤、高音が紫
+- ``circle``: ``showwaves`` を左右反転でつないだ帯を ``remap`` で輪に曲げ、
+  円く切り抜いたアートワークのまわりに置く。色相が輪を一周する
+- ``volume``: ``showvolume`` の左右の音量メーターを右端に
 
-The still frame is input 0 (looped), the audio is input 1. ``circle`` also
-reads the two ``remap`` coordinate maps as inputs 2 and 3.
+入力 0 が静止画 (ループ)、入力 1 が音声。``circle`` は ``remap`` の座標マップを
+入力 2, 3 として読む。
 """
 
 import array
 import math
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 from util.streaming.artwork import FRAME_SIZE
@@ -27,6 +30,8 @@ CIRCLE_ART_RADIUS = 170
 CIRCLE_RING = (176, 262)
 # 輪の元になる横長の波形 (半周分。左右反転して 1 周にするので継ぎ目が出ない)
 CIRCLE_WAVE_SIZE = (720, 86)
+# spectrum: バーの本数
+SPECTRUM_BARS = 64
 
 
 def parse_effect(value: str | None) -> str | None:
@@ -59,9 +64,16 @@ def effect_filtergraph(
     Examples
     --------
     >>> g = effect_filtergraph("wave")
-    >>> "[1:a]showwaves=s=960x120" in g and g.endswith("format=yuv420p[v]")
+    >>> "[1:a]showwaves=s=960x140" in g and g.endswith("format=yuv420p[v]")
     True
-    >>> "showcqt" in effect_filtergraph("spectrum")
+
+    白一色ではなく、虹色の帯を形で切り抜いて光らせる
+
+    >>> all("alphamerge" in effect_filtergraph(e) and _GLOW in effect_filtergraph(e)
+    ...     for e in ("wave", "spectrum", "circle"))
+    True
+    >>> g = effect_filtergraph("spectrum")
+    >>> "showcqt" in g and "a_weighting(f)" in g and "colorkey" not in g
     True
     >>> g = effect_filtergraph("circle")
     >>> "[2:v]" in g and "[3:v]" in g and "remap" in g and "hflip" in g
@@ -78,19 +90,34 @@ def effect_filtergraph(
     effect = parse_effect(effect)
     width, height = size
     if effect == "wave":
-        h = 120
+        h = 140
         return (
             f"[1:a]showwaves=s={width}x{h}:mode=cline:r={fps}:scale=sqrt:draw=full"
-            f":colors=white,format=rgba,colorchannelmixer=aa=0.75[fx];"
-            f"[0:v][fx]overlay=0:{height - h - 12}:format=auto,format=yuv420p[v]"
+            f":colors=white,format=rgba,alphaextract[m];"
+            f"{_rainbow(width, h, fps)}[c];"
+            f"[c][m]alphamerge,{_GLOW}[fx];"
+            f"[0:v][fx]overlay=0:{height - h - 8}:format=auto,format=yuv420p[v]"
         )
     if effect == "spectrum":
-        h = 150
-        # showcqt の背景は黒なので colorkey で抜く
+        h = 160
+        bars = SPECTRUM_BARS
+        step = width // bars
+        # showcqt の明るさを帯ごとに平均して二値にし、ブロックのバーにする。
+        # 低音ばかり伸びないよう A 特性の平方根で重み付けする。
+        # 色はバーの位置 (低音=赤 → 高音=紫) で決める
         return (
             f"[1:a]showcqt=s={width}x{h}:r={fps}:bar_h={h}:sono_h=0:axis=0"
-            f":bar_g=2:bar_v=8:count=2:basefreq=40:endfreq=12000,format=rgba,"
-            f"colorkey=black:0.05:0.05,colorchannelmixer=aa=0.75[fx];"
+            f":bar_g=2:bar_v=48*sqrt(a_weighting(f)):count=2"
+            f":basefreq=30:endfreq=8000,"
+            f"format=gray,scale={bars}x{h}:flags=area,"
+            f"lut=y='if(gt(val,10),255,0)',"
+            f"scale={width}x{h}:flags=neighbor[bars];"
+            f"nullsrc=s={width}x{h}:r={fps},format=gray,"
+            f"geq=lum='if(lt(mod(X,{step}),{step - 3})*lt(mod(Y,8),6),255,0)',"
+            f"loop=loop=-1:size=1[grid];"
+            f"[bars][grid]blend=all_mode=multiply[m];"
+            f"{_rainbow(width, h, fps, period=0)}[c];"
+            f"[c][m]alphamerge,{_GLOW}[fx];"
             f"[0:v][fx]overlay=0:{height - h}:format=auto,format=yuv420p[v]"
         )
     if effect == "circle":
@@ -98,10 +125,11 @@ def effect_filtergraph(
         side = 2 * CIRCLE_RING[1]
         return (
             f"[1:a]showwaves=s={w}x{h}:mode=cline:r={fps}:scale=sqrt:draw=full"
-            f":colors=white,format=rgba,split[w1][w2];[w2]hflip[w3];"
-            f"[w1][w3]hstack,format=rgba[strip];"
-            f"[strip][2:v][3:v]remap=fill=black@0,"
-            f"colorchannelmixer=aa=0.85[fx];"
+            f":colors=white,format=rgba,alphaextract,split[w1][w2];[w2]hflip[w3];"
+            f"[w1][w3]hstack[m];"
+            f"{_rainbow(2 * w, h, fps)}[c];"
+            f"[c][m]alphamerge,format=rgba[strip];"
+            f"[strip][2:v][3:v]remap=fill=black@0,{_GLOW}[fx];"
             f"[0:v][fx]overlay={(width - side) // 2}:{(height - side) // 2}"
             f":format=auto,format=yuv420p[v]"
         )
@@ -112,6 +140,38 @@ def effect_filtergraph(
         f"format=rgba,colorchannelmixer=aa=0.85[fx];"
         f"[0:v][fx]overlay=W-w-24:(H-h)/2:format=auto,format=yuv420p[v]"
     )
+
+
+# ぼかした同じ絵を下に敷いて光らせる (ネオン風)。ぼかしは 1/4 に縮めてから掛けて軽くする
+_GLOW = (
+    "split[g1][g2];[g2]scale=iw/4:ih/4,boxblur=2:1,scale=iw*4:ih*4[g3];"
+    "[g3][g1]overlay=format=auto"
+)
+
+
+def _rainbow(width: int, height: int, fps: int, period: float = 6) -> str:
+    """横方向に色相が一周する虹色の帯 (彩度・明度は最大)
+
+    1 枚だけ ``geq`` で作って ``loop`` で使い回す。``period`` 秒で色相が一周して流れる
+    (0 なら止まったまま)。
+
+    >>> g = _rainbow(960, 140, 15)
+    >>> g.startswith("nullsrc=s=960x140:r=15,format=rgb24,geq=") and "loop=loop=-1:size=1" in g
+    True
+    >>> "hue=H=" in g, "hue=H=" in _rainbow(960, 140, 15, period=0)
+    (True, False)
+    """
+    hue = f"6*X/{width}"
+    graph = (
+        f"nullsrc=s={width}x{height}:r={fps},format=rgb24,"
+        f"geq=r='255*clip(abs({hue}-3)-1,0,1)'"
+        f":g='255*clip(2-abs({hue}-2),0,1)'"
+        f":b='255*clip(2-abs({hue}-4),0,1)',"
+        f"loop=loop=-1:size=1"
+    )
+    if period:
+        graph += f",hue=H=2*PI*t/{period}"
+    return graph + ",format=rgba"
 
 
 def write_circle_maps(directory: str | Path) -> tuple[Path, Path]:
@@ -128,6 +188,17 @@ def write_circle_maps(directory: str | Path) -> tuple[Path, Path]:
     >>> xmap.read_bytes()[:16]
     b'P5\\n524 524\\n65535'
     >>> len(ymap.read_bytes()) == len(b"P5\\n524 524\\n65535\\n") + 524 * 524 * 2
+    True
+
+    同時に何本作っても失敗せず、同じ中身になり、一時ファイルも残らない
+
+    >>> from concurrent.futures import ThreadPoolExecutor
+    >>> d = tempfile.mkdtemp()
+    >>> with ThreadPoolExecutor(8) as pool:
+    ...     results = list(pool.map(lambda _: write_circle_maps(d), range(16)))
+    >>> len(set(results)), sorted(p.name for p in Path(d).iterdir())
+    (1, ['circle_xmap_176-262-1440x86.pgm', 'circle_ymap_176-262-1440x86.pgm'])
+    >>> xmap.read_bytes() == results[0][0].read_bytes()
     True
     """
     directory = Path(directory)
@@ -164,7 +235,13 @@ def write_circle_maps(directory: str | Path) -> tuple[Path, Path]:
     header = f"P5\n{side} {side}\n65535\n".encode()
     directory.mkdir(parents=True, exist_ok=True)
     for path, data in ((xmap_path, xs), (ymap_path, ys)):
-        tmp = path.with_suffix(".tmp")
-        tmp.write_bytes(header + data.tobytes())
-        tmp.replace(path)
+        # 同時に作っても壊れないよう、一時ファイルは呼び出しごとに別名にして置き換える
+        fd, tmp = tempfile.mkstemp(dir=directory, prefix=path.stem, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(header + data.tobytes())
+            os.replace(tmp, path)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
     return xmap_path, ymap_path
